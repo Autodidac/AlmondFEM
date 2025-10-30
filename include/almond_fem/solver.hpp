@@ -488,7 +488,7 @@ namespace almond::fem
 
                 preconditioner.apply(r, z);
                 const double rho_new = std::inner_product(r.begin(), r.end(), z.begin(), 0.0);
-                if (std::abs(rho) <= std::numeric_limits<double>::epsilon())
+                if (std::abs(rho_new) <= std::numeric_limits<double>::epsilon())
                 {
                     throw std::runtime_error("CG breakdown: encountered zero rho");
                 }

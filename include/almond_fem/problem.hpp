@@ -21,6 +21,8 @@ namespace almond::fem
     {
         bool verbose{false};
         double pivot_tolerance{1e-12};
+        bool build_sellc_sigma{false};
+        std::size_t sell_chunk_size{32};
     };
 
     struct ProblemDefinition

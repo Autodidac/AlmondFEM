@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include <fmt/format.h>   // println, format_string, format
+#include <fmt/format.h>   // print, format_string, format
 #include <fmt/ostream.h>  // enable fmt for types with operator<<
 #include <iostream>       // std::cout
 #include <string>
@@ -28,7 +28,8 @@ namespace safe_io {
     template <class... Args>
     inline void print(fmt::format_string<Args...> fmt_str, Args&&... args) {
         detail::configure_console();
-        fmt::println(stdout, fmt_str, std::forward<Args>(args)...);
+        fmt::vprint(stdout, fmt_str, fmt::make_format_args(std::forward<Args>(args)...));
+        fmt::print(stdout, "\n");
         std::fflush(stdout);
     }
 
@@ -36,7 +37,8 @@ namespace safe_io {
     template <class... Args>
     inline void eprint(fmt::format_string<Args...> fmt_str, Args&&... args) {
         detail::configure_console();
-        fmt::println(stderr, fmt_str, std::forward<Args>(args)...);
+        fmt::vprint(stderr, fmt_str, fmt::make_format_args(std::forward<Args>(args)...));
+        fmt::print(stderr, "\n");
         std::fflush(stderr);
     }
 
@@ -44,7 +46,8 @@ namespace safe_io {
     template <class... Args>
     [[noreturn]] inline void fatal(fmt::format_string<Args...> fmt_str, Args&&... args) {
         detail::configure_console();
-        fmt::println(stderr, fmt_str, std::forward<Args>(args)...);
+        fmt::vprint(stderr, fmt_str, fmt::make_format_args(std::forward<Args>(args)...));
+        fmt::print(stderr, "\n");
         std::fflush(stderr);
         std::terminate();
     }

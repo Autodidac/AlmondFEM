@@ -5,6 +5,7 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace
@@ -49,16 +50,30 @@ int main()
         {4, 0.1},
     };
 
-    const almond::fem::SolveOptions options{.verbose = true};
-    const auto result = almond::fem::solve(mesh, problem, options);
+    const auto report_solution = [&](std::string_view label, const almond::fem::SolveResult& result) {
+        safe_io::print("{} residual norm: {:.6e}", label, result.residual_norm);
+        for (std::size_t i = 0; i < result.nodal_values.size(); ++i)
+        {
+            const auto& node = mesh.node(i);
+            safe_io::print("  Node {} @ ({:.2f}, {:.2f}) -> {:.4f}", i, node.x, node.y, result.nodal_values[i]);
+        }
+    };
 
-    safe_io::print("AlmondFEM demo complete. Residual norm: {:.6e}", result.residual_norm);
+    almond::fem::SolverOptions cg_jacobi{};
+    cg_jacobi.verbose = true;
+    const auto cg_jacobi_result = almond::fem::solve(mesh, problem, cg_jacobi);
+    report_solution("CG + Jacobi", cg_jacobi_result);
 
-    for (std::size_t i = 0; i < result.nodal_values.size(); ++i)
-    {
-        const auto& node = mesh.node(i);
-        safe_io::print("Node {} @ ({:.2f}, {:.2f}) -> {:.4f}", i, node.x, node.y, result.nodal_values[i]);
-    }
+    almond::fem::SolverOptions cg_ic0{};
+    cg_ic0.preconditioner = almond::fem::PreconditionerType::IncompleteCholesky0;
+    const auto cg_ic0_result = almond::fem::solve(mesh, problem, cg_ic0);
+    report_solution("CG + IC(0)", cg_ic0_result);
+
+    almond::fem::SolverOptions direct{};
+    direct.solver = almond::fem::SolverType::Direct;
+    direct.preconditioner = almond::fem::PreconditionerType::None;
+    const auto direct_result = almond::fem::solve(mesh, problem, direct);
+    report_solution("Direct", direct_result);
 
 #ifdef _WIN32
     safe_io::print("Press Enter to exit...");

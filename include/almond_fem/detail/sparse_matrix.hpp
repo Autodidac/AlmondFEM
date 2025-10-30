@@ -238,8 +238,59 @@ namespace almond::fem::detail
         std::vector<double> m_values{};
     };
 
-    inline std::vector<double> solve(const CsrMatrix& csr, std::vector<double> rhs, double pivot_tolerance)
+    inline void multiply(const CsrMatrix& csr, const std::vector<double>& x, std::vector<double>& result)
     {
-        return solve(csr.to_dense(), std::move(rhs), pivot_tolerance);
+        const auto n = csr.dimension();
+        if (result.size() != n)
+        {
+            result.assign(n, 0.0);
+        }
+        else
+        {
+            std::fill(result.begin(), result.end(), 0.0);
+        }
+
+        const auto& row_ptr = csr.row_ptr();
+        const auto& col_idx = csr.col_idx();
+        const auto& values = csr.values();
+
+        for (std::size_t row = 0; row < n; ++row)
+        {
+            const auto begin = static_cast<std::size_t>(row_ptr[row]);
+            const auto end = static_cast<std::size_t>(row_ptr[row + 1]);
+            double sum = 0.0;
+            for (std::size_t idx = begin; idx < end; ++idx)
+            {
+                const auto column = static_cast<std::size_t>(col_idx[idx]);
+                sum += values[idx] * x[column];
+            }
+            result[row] = sum;
+        }
+    }
+
+    inline std::vector<double> diagonal(const CsrMatrix& csr)
+    {
+        const auto n = csr.dimension();
+        std::vector<double> diag(n, 0.0);
+
+        const auto& row_ptr = csr.row_ptr();
+        const auto& col_idx = csr.col_idx();
+        const auto& values = csr.values();
+
+        for (std::size_t row = 0; row < n; ++row)
+        {
+            const auto begin = static_cast<std::size_t>(row_ptr[row]);
+            const auto end = static_cast<std::size_t>(row_ptr[row + 1]);
+            for (std::size_t idx = begin; idx < end; ++idx)
+            {
+                if (static_cast<std::size_t>(col_idx[idx]) == row)
+                {
+                    diag[row] = values[idx];
+                    break;
+                }
+            }
+        }
+
+        return diag;
     }
 } // namespace almond::fem::detail

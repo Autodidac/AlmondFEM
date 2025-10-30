@@ -64,12 +64,12 @@ int main()
     showcase.preconditioner = almond::fem::PreconditionerType::Jacobi; // Lightweight diagonal scaling for stability.
     showcase.tolerance = 1e-10; // Tighten the CG tolerance so the residual visibly contracts.
     showcase.max_iterations = 256; // Cap the iteration budget for documentation and demos.
-    showcase.build_sellc_sigma = true; // Request SELL-C-σ slices alongside the canonical CSR matrix.
+    showcase.build_sellc_sigma = true; // Request SELL-C-sigma slices alongside the canonical CSR matrix.
     showcase.sell_chunk_size = 16; // Override the chunk width to highlight tunable SIMD layouts.
     showcase.verbose = true; // Emit per-iteration residuals and backend summaries to the console.
 
     const auto cg_showcase_result = almond::fem::solve(mesh, problem, showcase);
-    report_solution("CG + Jacobi (SELL-C-σ)", cg_showcase_result);
+    report_solution("CG + Jacobi (SELL-C-sigma)", cg_showcase_result);
 
 #ifdef _WIN32
     safe_io::print("Press Enter to exit...");

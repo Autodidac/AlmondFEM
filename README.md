@@ -34,7 +34,7 @@ AlmondFEM assembles element contributions into a COO structure and promotes it t
 CSR remains the authoritative storage throughout factorisation, residual evaluations, and preconditioner builds, with optional
 views derived from it when toggled through `SolverOptions`:
 
-- **SELL-C-σ slices** – enable `SolverOptions::build_sellc_sigma` (customise with `SolverOptions::sell_chunk_size`) to materialise
+- **SELL-C-sigma slices** – enable `SolverOptions::build_sellc_sigma` (customise with `SolverOptions::sell_chunk_size`) to materialise
   SIMD-friendly slices while retaining CSR as the source-of-truth storage.
 - **ELL reference layout** – request an ELLPACK view for fixed-width row storage during experimentation; it is generated on
   demand from the CSR assembled under the active `SolverOptions` configuration for validation and documentation scenarios.
@@ -45,7 +45,7 @@ options.solver = almond::fem::SolverType::ConjugateGradient; // Showcase the ite
 options.preconditioner = almond::fem::PreconditionerType::Jacobi; // Lightweight diagonal scaling.
 options.tolerance = 1e-10; // Tighten convergence for the demo mesh.
 options.max_iterations = 256; // Guard against runaway solves in documentation builds.
-options.build_sellc_sigma = true; // Materialise SELL-C-σ slices alongside CSR.
+options.build_sellc_sigma = true; // Materialise SELL-C-sigma slices alongside CSR.
 options.sell_chunk_size = 16; // Highlight tunable SIMD-friendly chunk widths.
 options.verbose = true; // Emit per-iteration residuals to the console.
 
@@ -53,7 +53,7 @@ const auto result = almond::fem::solve(mesh, problem, options);
 safe_io::print("Final residual: {:.3e}", result.residual_norm);
 ```
 
-`Application1` wires up the same configuration so running it assembles the SELL-C-σ view, enforces the stricter conjugate
+`Application1` wires up the same configuration so running it assembles the SELL-C-sigma view, enforces the stricter conjugate
 gradient tolerance/iteration cap, and prints the verbose residual history alongside the final norm. Deeper solver internals (matrix
 assembly, preconditioners, and backend toggles) are documented in [docs/api-overview.md](docs/api-overview.md); combine that guide
 with the sample to experiment with new problem definitions or convergence settings. The surrounding template remains easy to extend

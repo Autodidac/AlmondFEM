@@ -1,24 +1,26 @@
-# Windows guide
+# Windows build guide
 
-This document captures the recommended tooling and workflows for building the template on Windows hosts.
+This guide captures the tooling required to build and debug AlmondFEM on Windows. You can
+use the scripted flow (via Git Bash or WSL), Visual Studio presets, or the standalone
+solution depending on preference.
 
 ## Prerequisites
 - **Visual Studio 2022** (or Build Tools) with the *Desktop development with C++* workload.
-- **Ninja** (recommended): install via [Chocolatey](https://chocolatey.org/) or scoop.
-- **Git for Windows**: provides Git Bash for running the repository scripts.
-- **vcpkg**: clone `https://github.com/microsoft/vcpkg` and run `bootstrap-vcpkg.bat`.
-- **Vulkan SDK** (optional but recommended): install from [LunarG](https://vulkan.lunarg.com/sdk/home#windows).
+- **Ninja** (recommended) installed via [Chocolatey](https://chocolatey.org/) or scoop.
+- **Git for Windows** to provide Git Bash and Unix-compatible shells for the scripts.
+- **vcpkg** (optional dependency manager):
+  ```powershell
+  git clone https://github.com/microsoft/vcpkg.git C:\dev\vcpkg
+  C:\dev\vcpkg\bootstrap-vcpkg.bat
+  $env:VCPKG_ROOT = "C:\dev\vcpkg"
+  $env:PATH = "$env:VCPKG_ROOT;$env:PATH"
+  ```
+- **Vulkan SDK** (optional) from [LunarG](https://vulkan.lunarg.com/sdk/home#windows). Add
+  `%VULKAN_SDK%\Bin` and `%VULKAN_SDK%\Lib` to `PATH` if using the graphics experiments.
 
-Configure your environment variables:
-```powershell
-$env:VCPKG_ROOT = "C:\path\to\vcpkg"
-$env:PATH = "$env:VCPKG_ROOT;$env:PATH"
-$env:VULKAN_SDK = "C:\VulkanSDK\<version>"
-```
-If you installed the SDK system-wide, add `%VULKAN_SDK%\Bin` to `PATH`.
-
-## Configure, build, install, run
-Run the scripts from **x64 Native Tools Command Prompt for VS** or **Developer PowerShell** so that `cl.exe` and Ninja are available.
+## Scripted workflow
+Run the scripts from **x64 Native Tools Command Prompt for VS** or **Developer PowerShell**
+so `cl.exe` and Ninja are available:
 
 ```powershell
 bash ./cmake/configure.sh msvc Debug
@@ -27,19 +29,27 @@ bash ./install.sh msvc Debug
 bash ./run.sh msvc Debug
 ```
 
-> Tip: `bash` comes with Git for Windows. The scripts are also compatible with WSL.
+The scripts accept `msvc`, `gcc`, or `clang` to match your installed toolchains. Outputs are
+written to `Bin/<Compiler>-<Config>` and `built/bin/<Compiler>-<Config>`.
 
 ## Visual Studio workflows
-- Open `app1.sln` if you prefer managing the project through a classic solution.
-- Alternatively, use **File → Open → CMake...** and select `CMakeLists.txt`. Visual Studio consumes `CMakePresets.json` to mirror the scripted configurations.
+- Open `app1.sln` for the classic solution experience. Projects link against the same
+  sources as the CMake targets.
+- Alternatively, choose **File → Open → CMake...** and load `CMakeLists.txt`. Visual Studio
+  reads `CMakePresets.json`, exposing the same presets as the scripts.
 
 ## VS Code workflows
 1. Install the *C/C++*, *CMake Tools*, and *CMake* extensions.
-2. Open the repository folder and select the appropriate kit (MSVC, GCC, or Clang).
-3. Use the *CMake: Configure* and *CMake: Build* commands, or call the scripts from the integrated terminal.
+2. Open the repository folder and select the `msvc` kit.
+3. Use the *CMake: Configure* and *CMake: Build* commands or call the scripts from the
+   integrated terminal.
 
 ## Troubleshooting
-- **vcpkg toolchain not detected**: Confirm `VCPKG_ROOT` or `VCPKG_INSTALLATION_ROOT` points to the vcpkg directory before running the configure script.
-- **Ninja not found**: Install with `choco install ninja` or remove `ninja.exe` from `PATH` to fallback to `Visual Studio 17 2022` generators.
-- **MSVC link errors**: Ensure you are in the correct architecture prompt (`x64 Native Tools`).
-- **Vulkan loader errors**: Verify `%VULKAN_SDK%\Bin` and `%VULKAN_SDK%\Lib` are on `PATH` and `%VK_LAYER_PATH%` points at the SDK `Bin` directory.
+- **vcpkg not detected** – set `VCPKG_ROOT` or `VCPKG_INSTALLATION_ROOT` before running the
+  configure script.
+- **Ninja missing** – `choco install ninja` or rely on the bundled Visual Studio generator if
+  Ninja is unavailable.
+- **Link errors** – ensure you launched the x64 developer prompt so MSVC environment
+  variables are initialised.
+- **Vulkan loader issues** – confirm `%VULKAN_SDK%` is exported and `%VK_LAYER_PATH%` points to
+  the SDK `Bin` directory.

@@ -1,144 +1,140 @@
-# Cpp20_Ultimate_Project_Template
+# AlmondFEM
 
-The Ultimate Hello World – cross-platform, multi-editor ready C++20 template for quickly bootstrapping real-world applications and libraries.
+AlmondFEM is a modern C++23 finite-element toolkit focused on solving 2D scalar Poisson
+problems with linear triangular elements. The repository packages the production headers,
+reference applications, and every build system configuration required to exercise the
+solver on Linux and Windows. Although the project started from a generic template, the
+layout has been curated to serve a simulation-centric workflow: headers live under
+`include/`, solver demos sit in `cmakeapp1/` and `Application1/`, and the surrounding
+infrastructure targets reproducible scientific builds.
 
-## Project vision
-- Provide a batteries-included baseline for modern C++20 development that works across Windows and Linux.
-- Showcase clean CMake integration with manifest-based dependency management (vcpkg) and graphics-ready defaults (Vulkan SDK).
-- Offer repeatable scripts so teams can configure, build, install, and run projects from a single source of truth.
-- Ship a modern header-only finite element solver (AlmondFEM) that can be embedded directly into AlmondShell/AlmondEngine tooling.
+## Project goals
+- Deliver a compact, dependency-light solver that can be embedded inside tools or games.
+- Preserve cross-platform workflows so researchers can share meshes and executables without
+  re-authoring build files.
+- Document each build system variant (scripts, presets, IDE integrations, Visual Studio
+  solution) so new contributors can pick the flow that matches their environment.
+- Provide an extendable foundation for meshing, preconditioning, and linear-algebra
+  experiments.
 
-## AlmondFEM library overview
+## Solver capabilities
+- **Header-only core** – link the `AlmondFEM` interface target to consume the solver without
+  adding new translation units.
+- **Flexible solver pipeline** – switch between direct Gaussian elimination and conjugate
+  gradient iterations via `SolverOptions::solver`.
+- **Preconditioning options** – enable Jacobi or incomplete Cholesky (IC(0)) to stabilise
+  iterative solves.
+- **Optional sparse backends** – materialise SELL-C-sigma or ELLPACK views next to the CSR
+  baseline by toggling `SolverOptions`.
+- **Diagnostic hooks** – activate `SolverOptions::verbose` to stream assembly output,
+  iteration counts, and residual norms through `safe_io`.
 
-AlmondFEM lives under `include/almond_fem` and is delivered as a header-only, interface CMake target. It focuses on 2D scalar
-Poisson problems with linear triangular elements and is ideal for gameplay prototyping or runtime tooling where a small,
-dependency-free solver is desirable.
+Refer to [`docs/api-overview.md`](docs/api-overview.md) for header-by-header details and
+usage snippets.
 
-Key features:
+## Repository layout and build systems
+AlmondFEM ships multiple build entry points so each platform can use familiar tooling while
+sharing the same CMake project graph. The most common paths are summarised below; the
+remaining documentation drills into each option.
 
-- **C++23 header-only design** – integrate by linking against the `AlmondFEM` interface target; no compilation units are required.
-- **Cross-platform** – relies exclusively on the C++ standard library and the bundled `safe_io` logging helpers.
-- **Dual solver paths** – select between a direct Gaussian-elimination solve (`SolverType::Direct`) and an iterative conjugate
-  gradient path (`SolverType::ConjugateGradient`) from `SolverOptions::solver`.
-- **Configurable convergence** – tune `SolverOptions::tolerance`, `SolverOptions::max_iterations`, and
-  `SolverOptions::pivot_tolerance` for precise control over accuracy, iteration caps, and pivoting safeguards, with
-  `SolverOptions::verbose` exposing per-iteration diagnostics.
-- **Preconditioning support** – pair the iterative solver with `SolverOptions::preconditioner` to switch between Jacobi,
-  incomplete Cholesky (IC0), or an identity/no-preconditioner configuration.
-- **Debug-friendly** – optional verbose mode prints the stiffness matrix, right-hand side, and residual norm via
-  `safe_io::print`.
+| Location | What it contains | Typical usage |
+| --- | --- | --- |
+| `include/almond_fem/` | All solver headers (mesh definitions, problem description, solver front-end). | Consume from your own CMake target or modify the core implementation. |
+| `cmakeapp1/` | Cross-platform CMake application that drives AlmondFEM with sample meshes. | Preferred executable for Linux/macOS/WSL; integrates cleanly with presets and Ninja/Make. |
+| `Application1/` | Visual Studio oriented application mirroring `cmakeapp1` behaviour. | Native MSVC workflow where `.sln`-based debugging is desired. |
+| `shared/` | Supporting libraries such as `safe_io` and reusable utilities. | Shared logging helpers and future runtime extensions. |
+| `cmake/` | Toolchain-aware shell scripts and helper modules. | Automates configure/build/install/run steps in a reproducible way. |
+| `CMakePresets.json` | IDE and CLI presets for mainstream compilers and configurations. | Allows `cmake --preset` and VS Code/CLion integrations. |
+| `app1.sln` | Hand-authored Visual Studio solution. | Directly open in Visual Studio when bypassing presets. |
 
-### Sparse matrix backends
+### Scripted build flow
+The top-level shell scripts are the recommended entry point on Linux, macOS, and Windows
+(with Git Bash/WSL). They wrap CMake invocations with a consistent directory structure.
 
-AlmondFEM assembles element contributions into a COO structure and promotes it to CSR before dispatching either solver.
-CSR remains the authoritative storage throughout factorisation, residual evaluations, and preconditioner builds, with optional
-views derived from it when toggled through `SolverOptions`:
+1. **Configure** – `./cmake/configure.sh <compiler> <config>` detects the generator, wires
+   in vcpkg if available, and initialises `Bin/<Compiler>-<Config>`.
+2. **Build** – `./build.sh <compiler> <config>` compiles all default targets; subsequent
+   invocations reuse the same build tree.
+3. **Install** – `./install.sh <compiler> <config>` stages binaries, libraries, and headers
+   under `built/bin/<Compiler>-<Config>` for packaging or downstream consumption.
+4. **Run** – `./run.sh <compiler> <config>` locates the demo executable (e.g. `cmakeapp1`)
+   and launches it with the chosen toolchain.
 
-- **SELL-C-sigma slices** – enable `SolverOptions::build_sellc_sigma` (customise with `SolverOptions::sell_chunk_size`) to materialise
-  SIMD-friendly slices while retaining CSR as the source-of-truth storage.
-- **ELL reference layout** – request an ELLPACK view for fixed-width row storage during experimentation; it is generated on
-  demand from the CSR assembled under the active `SolverOptions` configuration for validation and documentation scenarios.
+Each script prints the exact CMake command it executes, making it easy to adapt for custom
+CI pipelines or bespoke compiler flags.
 
-```cpp
-almond::fem::SolverOptions options{};
-options.solver = almond::fem::SolverType::ConjugateGradient; // Showcase the iterative path.
-options.preconditioner = almond::fem::PreconditionerType::Jacobi; // Lightweight diagonal scaling.
-options.tolerance = 1e-10; // Tighten convergence for the demo mesh.
-options.max_iterations = 256; // Guard against runaway solves in documentation builds.
-options.build_sellc_sigma = true; // Materialise SELL-C-sigma slices alongside CSR.
-options.sell_chunk_size = 16; // Highlight tunable SIMD-friendly chunk widths.
-options.verbose = true; // Emit per-iteration residuals to the console.
+### IDE presets and CMake CLI
+`CMakePresets.json` mirrors the script matrix and can be used directly:
 
-const auto result = almond::fem::solve(mesh, problem, options);
-safe_io::print("Final residual: {:.3e}", result.residual_norm);
+```bash
+cmake --preset gcc-debug
+cmake --build --preset gcc-debug
+cmake --build --preset gcc-debug --target install
 ```
 
-`Application1` wires up the same configuration so running it assembles the SELL-C-sigma view, enforces the stricter conjugate
-gradient tolerance/iteration cap, and prints the verbose residual history alongside the final norm. Deeper solver internals (matrix
-assembly, preconditioners, and backend toggles) are documented in [docs/api-overview.md](docs/api-overview.md); combine that guide
-with the sample to experiment with new problem definitions or convergence settings. The surrounding template remains easy to extend
-to new compilers, targets, and IDE workflows.
+Presets are consumed automatically by Visual Studio, VS Code, and CLion. Add new presets
+when introducing compilers, sanitiser builds, or cache wrappers; mirror any additions in
+the shell scripts so both pathways stay aligned.
+
+### Visual Studio solution
+For developers who rely on `.sln` files, `app1.sln` loads the AlmondFEM library, the
+`Application1` executable, and shared utilities. The solution references the same source
+files and headers as the CMake targets, ensuring IDE-only work remains compatible with the
+scripted and preset flows.
+
+## Quick start
+Follow the configure → build → install → run sequence using the compiler for your platform:
+
+```bash
+./cmake/configure.sh gcc Debug
+./build.sh gcc Debug
+./install.sh gcc Debug
+./run.sh gcc Debug
+```
+
+Swap `gcc` for `clang` or `msvc`, and choose `Release`/`RelWithDebInfo` when benchmarking.
+See [`docs/linux.md`](docs/linux.md) and [`docs/windows.md`](docs/windows.md) for platform-
+specific package recommendations and IDE guidance.
+
+## Environment prerequisites
+- **vcpkg** – optional but recommended for dependency resolution. Export `VCPKG_ROOT` or
+  `VCPKG_INSTALLATION_ROOT` before configuring, or drop a local `vcpkg_installed/` folder in
+  the repository root.
+- **CMake ≥ 3.21** – required for preset support and multi-config generators.
+- **Compiler toolchains** – GCC, Clang, or MSVC as outlined in the supported toolchain
+  table below.
+- **Ninja (optional)** – used automatically when available for faster builds.
+- **Vulkan SDK (optional)** – only needed when experimenting with graphics-adjacent demos.
 
 ## Supported toolchains
 | Compiler | Generator | Notes |
 | --- | --- | --- |
-| GCC | Ninja or Unix Makefiles | Auto-detected by scripts. Works on Linux and Windows (via MSYS2/MinGW). |
+| GCC | Ninja or Unix Makefiles | Auto-detected by scripts. Works on Linux and Windows (MSYS2/WSL). |
 | Clang | Ninja or Unix Makefiles | Uses system `clang++`; compatible with LLVM toolchains on all platforms. |
 | MSVC | Ninja Multi-Config | Requires Visual Studio Build Tools and an MSVC developer prompt. |
 
-> Configure-time detection automatically injects the appropriate vcpkg toolchain if `VCPKG_ROOT`, `VCPKG_INSTALLATION_ROOT`, or a local `vcpkg_installed` folder is present.
+> During configuration the scripts attempt to locate a vcpkg toolchain using
+> `VCPKG_ROOT`, `VCPKG_INSTALLATION_ROOT`, or a local `vcpkg_installed` directory.
 
-## Quick start
-Follow the configure → build → install → run flow:
+## Additional documentation
+- [`docs/api-overview.md`](docs/api-overview.md) – data structures, solver options, and
+  extension hooks.
+- [`docs/linux.md`](docs/linux.md) – distribution packages, IDE tips, and troubleshooting for
+  Unix-like systems.
+- [`docs/windows.md`](docs/windows.md) – Windows-specific setup, Visual Studio workflows, and
+  environment configuration.
+- [`docs/roadmap.md`](docs/roadmap.md) – upcoming solver features, tooling improvements, and
+  research milestones.
+- [`docs/CHANGELOG.md`](docs/CHANGELOG.md) – release tracking with a Keep-a-Changelog format.
 
-1. **Configure**
-   ```bash
-   ./cmake/configure.sh gcc Debug
-   ```
-   Adjust the compiler (`gcc`, `clang`, `msvc`) and build type (`Debug`, `Release`, etc.) as needed. Configuration output is placed in `Bin/<Compiler>-<Config>`.
-
-2. **Build**
-   ```bash
-   ./build.sh gcc Debug
-   ```
-   Reuses the configuration directory if it already exists. Pass `Release` to build optimized binaries.
-
-3. **Install**
-   ```bash
-   ./install.sh gcc Debug
-   ```
-   Installs artifacts into `built/bin/<Compiler>-<Config>` so they can be redistributed or consumed by downstream projects.
-
-4. **Run**
-   ```bash
-   ./run.sh gcc Debug
-   ```
-   Automatically locates the configured executable (e.g., `cmakeapp1`) and launches it.
-
-Platform-specific setup steps (Visual Studio, VS Code tasks, Linux package managers, etc.) are documented in:
-- [docs/windows.md](docs/windows.md)
-- [docs/linux.md](docs/linux.md)
-
-Additional high-level documentation lives in:
-- [docs/roadmap.md](docs/roadmap.md) for upcoming enhancements and priorities.
-- [docs/api-overview.md](docs/api-overview.md) for bundled utilities, abstractions, and extension points.
-- [docs/CHANGELOG.md](docs/CHANGELOG.md) for release notes and versioning strategy.
-
-## Environment prerequisites
-- **vcpkg**: Required for dependency resolution. Set either `VCPKG_ROOT` or `VCPKG_INSTALLATION_ROOT` before configuring, or place a local bootstrap under `vcpkg_installed/`.
-- **Vulkan SDK**: Install the Vulkan SDK for graphics samples or libraries that rely on Vulkan. Ensure `VULKAN_SDK` is exported and its `Bin` directory is in `PATH`.
-- **CMake ≥ 3.21**: Needed for multi-config generators and preset support.
-- **Ninja (optional)**: Speeds up builds; automatically selected when available.
-
-See the platform guides for package manager recommendations and verification commands.
-
-## Automation scripts
-All helper scripts reside at the repository root and are POSIX shell compatible (Windows users should run them inside WSL, MSYS2, or Git Bash).
-
-| Script | Purpose | Usage examples |
-| --- | --- | --- |
-| `cmake/configure.sh` | Creates the build tree for a compiler + configuration pair. | `./cmake/configure.sh clang Release`<br>`./cmake/configure.sh msvc RelWithDebInfo` |
-| `build.sh` | Builds the selected target set. | `./build.sh gcc Debug` |
-| `install.sh` | Installs CMake targets into `built/bin/<Compiler>-<Config>`. | `./install.sh clang Release` |
-| `run.sh` | Locates and executes the sample executable for the requested configuration. | `./run.sh msvc Release` |
-
-### Troubleshooting
-- **Missing vcpkg toolchain**: Ensure `VCPKG_ROOT` or `VCPKG_INSTALLATION_ROOT` points to a valid vcpkg clone. Re-run `./cmake/configure.sh ...` after setting the variable.
-- **Generator errors**: Install Ninja (`sudo apt install ninja-build` or `choco install ninja`) or ensure `make` is available. The scripts will fallback to Unix Makefiles when Ninja is absent.
-- **MSVC builds fail outside developer prompt**: Use the “x64 Native Tools Command Prompt for VS” so that `cl.exe` and Ninja are on `PATH`.
-- **Vulkan loader not found**: Confirm the Vulkan SDK is installed and that `VK_LAYER_PATH` and `VULKAN_SDK` environment variables are exported before configuring.
-
-## Customizing for new targets
-1. **Extend the configuration script**: Update `cmake/configure.sh` with a new compiler case (e.g., `icc`, `emcc`) and provide generator/toolchain arguments.
-2. **Add CMake presets**: Edit `CMakePresets.json` to encode the new build matrix for IDEs that support presets.
-3. **Update automation scripts**: Mirror the new compiler identifier in `build.sh`, `install.sh`, and `run.sh` so the end-to-end flow is consistent.
-4. **Document the workflow**: Add a subsection to the appropriate platform guide (`docs/*.md`) describing unique requirements or environment variables.
-
-## Contribution guidelines
-- **Roadmap**: When proposing or completing notable work, update [docs/roadmap.md](docs/roadmap.md) to reflect new priorities or delivered items.
-- **API overview**: Document new libraries, utilities, or extension points in [docs/api-overview.md](docs/api-overview.md) with usage notes.
-- **Changelog**: Record user-visible changes under the `[Unreleased]` section of [docs/CHANGELOG.md](docs/CHANGELOG.md) and promote entries during releases.
-- **Cross-links**: Ensure new documentation is linked from the README or relevant guides so contributors can discover it easily.
+## Contributing
+- Update the roadmap and changelog whenever solver features or build workflows evolve.
+- Document new APIs or utilities under `docs/` and cross-link them from this README.
+- Follow the existing directory conventions (`include/`, `shared/`, `docs/`) when introducing
+  new modules or samples.
+- Prefer adding configuration flags to the scripts/presets instead of hard-coding toolchain
+  choices in CMake files.
 
 ## Licensing
-This template ships with the default license for demonstration purposes. Replace it with your organization’s preferred license before distributing derived work.
+The repository currently ships with a demonstration license. Replace `LICENSE` with your
+organisation's preferred terms before distributing derivatives.

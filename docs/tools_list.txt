@@ -1,11 +1,12 @@
-git
-cmake
-gitkraken
-msvc
-vscode
-vscodium - linux
-vcpkg
+Required and recommended tooling for AlmondFEM development:
 
-text editor //special topic
-python - it's just good to have
-VulkanSDK
+- git
+- cmake
+- ninja
+- gcc / clang / msvc
+- vcpkg (optional dependency manager)
+- vscode or clion
+- visual studio (for `.sln` workflows)
+- python (handy for mesh generation scripts)
+- Vulkan SDK (optional for graphics experiments)
+- Text editor of choice for documentation updates

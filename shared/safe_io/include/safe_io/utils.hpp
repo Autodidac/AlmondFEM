@@ -14,7 +14,6 @@ namespace safe_io
     template <typename... Args>
     void print(fmt::format_string<Args...> fmt_str, Args&&... args)
     {
-        auto message = fmt::vformat(fmt_str, fmt::make_format_args(std::forward<Args>(args)...));
-        out() << message << '\n';
+        out() << fmt::vformat(fmt_str, fmt::make_format_args(std::forward<Args>(args)...)) << '\n';
     }
 } // namespace safe_io

@@ -8,8 +8,15 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <iterator>
+#include <limits>
+#include <memory>
 #include <numeric>
+#include <stdexcept>
+#include <string_view>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
@@ -18,6 +25,57 @@
 
 namespace almond::fem
 {
+    enum class SolverType
+    {
+        Direct,
+        ConjugateGradient,
+    };
+
+    enum class PreconditionerType
+    {
+        None,
+        Jacobi,
+        IncompleteCholesky0,
+    };
+
+    struct SolverOptions
+    {
+        SolverType solver{SolverType::ConjugateGradient};
+        PreconditionerType preconditioner{PreconditionerType::Jacobi};
+        double tolerance{1e-8};
+        std::size_t max_iterations{1000};
+        bool verbose{false};
+        double pivot_tolerance{1e-12};
+        bool build_sellc_sigma{false};
+        std::size_t sell_chunk_size{32};
+    };
+
+    inline std::string_view to_string(SolverType type) noexcept
+    {
+        switch (type)
+        {
+        case SolverType::Direct:
+            return "Direct";
+        case SolverType::ConjugateGradient:
+            return "ConjugateGradient";
+        }
+        return "Unknown";
+    }
+
+    inline std::string_view to_string(PreconditionerType type) noexcept
+    {
+        switch (type)
+        {
+        case PreconditionerType::None:
+            return "None";
+        case PreconditionerType::Jacobi:
+            return "Jacobi";
+        case PreconditionerType::IncompleteCholesky0:
+            return "IC0";
+        }
+        return "Unknown";
+    }
+
     namespace detail
     {
         inline double element_area(const Mesh& mesh, const Element& element)
@@ -61,9 +119,423 @@ namespace almond::fem
             }
             return k;
         }
+
+        struct LinearSolveSummary
+        {
+            std::vector<double> solution{};
+            std::size_t iterations{0};
+            double achieved_residual{0.0};
+        };
+
+        class Preconditioner
+        {
+        public:
+            virtual ~Preconditioner() = default;
+            virtual void apply(const std::vector<double>& r, std::vector<double>& z) const = 0;
+        };
+
+        class IdentityPreconditioner final : public Preconditioner
+        {
+        public:
+            void apply(const std::vector<double>& r, std::vector<double>& z) const override
+            {
+                z = r;
+            }
+        };
+
+        class JacobiPreconditioner final : public Preconditioner
+        {
+        public:
+            explicit JacobiPreconditioner(const CsrMatrix& csr)
+                : m_inverse_diagonal(diagonal(csr))
+            {
+                for (auto& value : m_inverse_diagonal)
+                {
+                    if (std::abs(value) <= std::numeric_limits<double>::epsilon())
+                    {
+                        throw std::runtime_error("Jacobi preconditioner requires non-zero diagonal entries");
+                    }
+                    value = 1.0 / value;
+                }
+            }
+
+            void apply(const std::vector<double>& r, std::vector<double>& z) const override
+            {
+                const auto n = m_inverse_diagonal.size();
+                z.resize(n);
+                for (std::size_t i = 0; i < n; ++i)
+                {
+                    z[i] = r[i] * m_inverse_diagonal[i];
+                }
+            }
+
+        private:
+            std::vector<double> m_inverse_diagonal{};
+        };
+
+        class Ic0Preconditioner final : public Preconditioner
+        {
+        public:
+            explicit Ic0Preconditioner(const CsrMatrix& csr)
+            {
+                build(csr);
+            }
+
+            void apply(const std::vector<double>& r, std::vector<double>& z) const override
+            {
+                const auto n = m_rows.size();
+                if (z.size() != n)
+                {
+                    z.assign(n, 0.0);
+                }
+
+                std::vector<double> y(n, 0.0);
+                for (std::size_t row = 0; row < n; ++row)
+                {
+                    double sum = r[row];
+                    double diag = m_diag[row];
+                    for (const auto& entry : m_rows[row])
+                    {
+                        const auto column = static_cast<std::size_t>(entry.first);
+                        if (column == row)
+                        {
+                            diag = entry.second;
+                        }
+                        else
+                        {
+                            sum -= entry.second * y[column];
+                        }
+                    }
+                    y[row] = sum / diag;
+                }
+
+                for (std::ptrdiff_t row = static_cast<std::ptrdiff_t>(n) - 1; row >= 0; --row)
+                {
+                    double sum = y[static_cast<std::size_t>(row)];
+                    double diag = m_diag[static_cast<std::size_t>(row)];
+                    for (const auto& entry : m_upper[static_cast<std::size_t>(row)])
+                    {
+                        sum -= entry.second * z[static_cast<std::size_t>(entry.first)];
+                    }
+                    z[static_cast<std::size_t>(row)] = sum / diag;
+                }
+            }
+
+        private:
+            void build(const CsrMatrix& csr)
+            {
+                const auto n = csr.dimension();
+                m_rows.assign(n, {});
+                m_upper.assign(n, {});
+                m_diag.assign(n, 0.0);
+
+                const auto& row_ptr = csr.row_ptr();
+                const auto& col_idx = csr.col_idx();
+                const auto& values = csr.values();
+
+                for (std::size_t row = 0; row < n; ++row)
+                {
+                    const auto begin = static_cast<std::size_t>(row_ptr[row]);
+                    const auto end = static_cast<std::size_t>(row_ptr[row + 1]);
+                    for (std::size_t idx = begin; idx < end; ++idx)
+                    {
+                        const auto column = static_cast<std::size_t>(col_idx[idx]);
+                        if (column <= row)
+                        {
+                            m_rows[row].emplace_back(static_cast<int>(column), values[idx]);
+                        }
+                    }
+
+                    std::sort(m_rows[row].begin(), m_rows[row].end(), [](const auto& lhs, const auto& rhs) {
+                        return lhs.first < rhs.first;
+                    });
+
+                    const auto diag_iterator = std::find_if(m_rows[row].begin(), m_rows[row].end(), [row](const auto& entry) {
+                        return static_cast<std::size_t>(entry.first) == row;
+                    });
+
+                    if (diag_iterator == m_rows[row].end())
+                    {
+                        throw std::runtime_error("IC(0) preconditioner requires explicit diagonal entries");
+                    }
+                }
+
+                std::vector<std::size_t> diag_index(n, 0);
+                for (std::size_t row = 0; row < n; ++row)
+                {
+                    const auto iterator = std::find_if(m_rows[row].begin(), m_rows[row].end(), [row](const auto& entry) {
+                        return static_cast<std::size_t>(entry.first) == row;
+                    });
+                    diag_index[row] = static_cast<std::size_t>(std::distance(m_rows[row].begin(), iterator));
+                }
+
+                for (std::size_t row = 0; row < n; ++row)
+                {
+                    auto& row_entries = m_rows[row];
+                    const auto diag_pos = diag_index[row];
+
+                    for (std::size_t idx = 0; idx < row_entries.size(); ++idx)
+                    {
+                        auto& entry = row_entries[idx];
+                        const auto column = static_cast<std::size_t>(entry.first);
+                        if (column == row)
+                        {
+                            continue;
+                        }
+
+                        double sum = entry.second;
+                        const auto& column_entries = m_rows[column];
+                        std::size_t col_diag = diag_index[column];
+
+                        std::size_t i = 0;
+                        std::size_t j = 0;
+                        while (i < idx && j < col_diag)
+                        {
+                            const auto left_column = static_cast<std::size_t>(row_entries[i].first);
+                            const auto right_column = static_cast<std::size_t>(column_entries[j].first);
+
+                            if (left_column < column && right_column < column)
+                            {
+                                if (left_column == right_column)
+                                {
+                                    sum -= row_entries[i].second * column_entries[j].second;
+                                    ++i;
+                                    ++j;
+                                }
+                                else if (left_column < right_column)
+                                {
+                                    ++i;
+                                }
+                                else
+                                {
+                                    ++j;
+                                }
+                            }
+                            else
+                            {
+                                if (left_column >= column)
+                                {
+                                    ++j;
+                                }
+                                else
+                                {
+                                    ++i;
+                                }
+                            }
+                        }
+
+                        entry.second = sum / column_entries[col_diag].second;
+                    }
+
+                    double diag_value = row_entries[diag_pos].second;
+                    for (std::size_t idx = 0; idx < diag_pos; ++idx)
+                    {
+                        const double lij = row_entries[idx].second;
+                        diag_value -= lij * lij;
+                    }
+
+                    if (diag_value <= 0.0)
+                    {
+                        throw std::runtime_error("IC(0) factorisation failed: matrix is not SPD");
+                    }
+
+                    const double sqrt_value = std::sqrt(diag_value);
+                    row_entries[diag_pos].second = sqrt_value;
+                    m_diag[row] = sqrt_value;
+                }
+
+                for (std::size_t row = 0; row < n; ++row)
+                {
+                    for (const auto& entry : m_rows[row])
+                    {
+                        const auto column = static_cast<std::size_t>(entry.first);
+                        if (column < row)
+                        {
+                            m_upper[column].emplace_back(static_cast<int>(row), entry.second);
+                        }
+                    }
+                }
+            }
+
+            std::vector<std::vector<std::pair<int, double>>> m_rows{};
+            std::vector<std::vector<std::pair<int, double>>> m_upper{};
+            std::vector<double> m_diag{};
+        };
+
+        inline bool is_structurally_symmetric(const CsrMatrix& csr, double tolerance = 1e-9)
+        {
+            const auto n = csr.dimension();
+            const auto& row_ptr = csr.row_ptr();
+            const auto& col_idx = csr.col_idx();
+            const auto& values = csr.values();
+
+            for (std::size_t row = 0; row < n; ++row)
+            {
+                const auto begin = static_cast<std::size_t>(row_ptr[row]);
+                const auto end = static_cast<std::size_t>(row_ptr[row + 1]);
+                for (std::size_t idx = begin; idx < end; ++idx)
+                {
+                    const auto column = static_cast<std::size_t>(col_idx[idx]);
+                    if (column < row)
+                    {
+                        continue;
+                    }
+
+                    const double value = values[idx];
+                    const auto mirror_begin = static_cast<std::size_t>(row_ptr[column]);
+                    const auto mirror_end = static_cast<std::size_t>(row_ptr[column + 1]);
+                    bool found = false;
+                    for (std::size_t mirror = mirror_begin; mirror < mirror_end; ++mirror)
+                    {
+                        if (static_cast<std::size_t>(col_idx[mirror]) == row)
+                        {
+                            if (std::abs(values[mirror] - value) > tolerance)
+                            {
+                                return false;
+                            }
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found)
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        inline std::unique_ptr<Preconditioner> make_preconditioner(const CsrMatrix& csr, PreconditionerType type)
+        {
+            switch (type)
+            {
+            case PreconditionerType::None:
+                return std::make_unique<IdentityPreconditioner>();
+            case PreconditionerType::Jacobi:
+                return std::make_unique<JacobiPreconditioner>(csr);
+            case PreconditionerType::IncompleteCholesky0:
+                if (!is_structurally_symmetric(csr))
+                {
+                    throw std::invalid_argument("IC(0) preconditioner requires a symmetric matrix");
+                }
+                return std::make_unique<Ic0Preconditioner>(csr);
+            }
+
+            throw std::invalid_argument("Unsupported preconditioner type");
+        }
+
+        inline LinearSolveSummary direct_solve(const CsrMatrix& csr, const std::vector<double>& rhs, const SolverOptions& options)
+        {
+            LinearSolveSummary summary{};
+            summary.solution = solve(csr.to_dense(), rhs, options.pivot_tolerance);
+            summary.iterations = 1;
+            return summary;
+        }
+
+        inline LinearSolveSummary conjugate_gradient(const CsrMatrix& csr, const std::vector<double>& rhs, const SolverOptions& options, const Preconditioner& preconditioner)
+        {
+            const auto n = csr.dimension();
+            LinearSolveSummary summary{};
+            summary.solution.assign(n, 0.0);
+
+            std::vector<double> r = rhs;
+            std::vector<double> z(n, 0.0);
+            preconditioner.apply(r, z);
+            std::vector<double> p = z;
+            std::vector<double> Ap(n, 0.0);
+
+            double rho = std::inner_product(r.begin(), r.end(), z.begin(), 0.0);
+            if (std::abs(rho) <= std::numeric_limits<double>::epsilon())
+            {
+                summary.achieved_residual = std::sqrt(std::inner_product(r.begin(), r.end(), r.begin(), 0.0));
+                return summary;
+            }
+
+            const double tolerance = options.tolerance > 0.0 ? options.tolerance : 1e-12;
+            const std::size_t max_iterations = options.max_iterations != 0 ? options.max_iterations : n * 10;
+
+            double residual_norm = std::sqrt(std::inner_product(r.begin(), r.end(), r.begin(), 0.0));
+            if (residual_norm < tolerance)
+            {
+                summary.achieved_residual = residual_norm;
+                return summary;
+            }
+
+            for (std::size_t iteration = 0; iteration < max_iterations; ++iteration)
+            {
+                multiply(csr, p, Ap);
+                double denom = std::inner_product(p.begin(), p.end(), Ap.begin(), 0.0);
+                if (std::abs(denom) <= std::numeric_limits<double>::epsilon())
+                {
+                    throw std::runtime_error("CG breakdown: encountered zero denominator");
+                }
+
+                const double alpha = rho / denom;
+                for (std::size_t i = 0; i < n; ++i)
+                {
+                    summary.solution[i] += alpha * p[i];
+                    r[i] -= alpha * Ap[i];
+                }
+
+                residual_norm = std::sqrt(std::inner_product(r.begin(), r.end(), r.begin(), 0.0));
+                summary.iterations = iteration + 1;
+                if (residual_norm < tolerance)
+                {
+                    break;
+                }
+
+                preconditioner.apply(r, z);
+                const double rho_new = std::inner_product(r.begin(), r.end(), z.begin(), 0.0);
+                if (std::abs(rho) <= std::numeric_limits<double>::epsilon())
+                {
+                    throw std::runtime_error("CG breakdown: encountered zero rho");
+                }
+                const double beta = rho_new / rho;
+                rho = rho_new;
+                for (std::size_t i = 0; i < n; ++i)
+                {
+                    p[i] = z[i] + beta * p[i];
+                }
+            }
+
+            summary.achieved_residual = residual_norm;
+            return summary;
+        }
+
+        inline LinearSolveSummary solve_linear_system(const CsrMatrix& csr, const std::vector<double>& rhs, const SolverOptions& options)
+        {
+            LinearSolveSummary summary{};
+
+            switch (options.solver)
+            {
+            case SolverType::Direct:
+                summary = direct_solve(csr, rhs, options);
+                break;
+            case SolverType::ConjugateGradient:
+            {
+                auto preconditioner = make_preconditioner(csr, options.preconditioner);
+                summary = conjugate_gradient(csr, rhs, options, *preconditioner);
+                break;
+            }
+            default:
+                throw std::invalid_argument("Unsupported solver type");
+            }
+
+            std::vector<double> residual(rhs.size(), 0.0);
+            multiply(csr, summary.solution, residual);
+            for (std::size_t i = 0; i < residual.size(); ++i)
+            {
+                residual[i] -= rhs[i];
+            }
+            summary.achieved_residual = std::sqrt(std::inner_product(residual.begin(), residual.end(), residual.begin(), 0.0));
+
+            return summary;
+        }
     } // namespace detail
 
-    inline SolveResult solve(const Mesh& mesh, const ProblemDefinition& problem, const SolveOptions& options = {})
+    inline SolveResult solve(const Mesh& mesh, const ProblemDefinition& problem, const SolverOptions& options = {})
     {
         mesh.validate();
 
@@ -240,32 +712,17 @@ namespace almond::fem
                 safe_io::print("{}", row_values);
             }
             safe_io::print("RHS vector: {}", fmt::join(rhs, ", "));
+            safe_io::print("Invoking {} solver with {} preconditioner", to_string(options.solver), to_string(options.preconditioner));
         }
 
-        auto solution = detail::solve(csr, rhs, options.pivot_tolerance);
-
-        std::vector<double> residual(node_count, 0.0);
-        for (std::size_t i = 0; i < node_count; ++i)
-        {
-            double sum = 0.0;
-            const auto row_begin = static_cast<std::size_t>(csr.row_ptr()[i]);
-            const auto row_end = static_cast<std::size_t>(csr.row_ptr()[i + 1]);
-            for (std::size_t entry = row_begin; entry < row_end; ++entry)
-            {
-                const auto column = static_cast<std::size_t>(csr.col_idx()[entry]);
-                sum += csr.values()[entry] * solution[column];
-            }
-            residual[i] = sum - rhs[i];
-        }
-
-        const double residual_norm = std::sqrt(std::inner_product(residual.begin(), residual.end(), residual.begin(), 0.0));
+        auto summary = detail::solve_linear_system(csr, rhs, options);
 
         if (options.verbose)
         {
-            safe_io::print("Residual L2 norm: {:.6e}", residual_norm);
+            safe_io::print("Solver completed in {} iteration(s). Residual L2 norm: {:.6e}", summary.iterations, summary.achieved_residual);
         }
 
-        return SolveResult{std::move(solution), residual_norm};
+        return SolveResult{std::move(summary.solution), summary.achieved_residual};
     }
 } // namespace almond::fem
 

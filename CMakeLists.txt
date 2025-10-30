@@ -9,7 +9,7 @@ project(MyCrossPlatformProject VERSION 1.0
                   LANGUAGES CXX)
 
 # Set C++ standard
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -45,6 +45,22 @@ endif()
 
 # Include sub-projects
 add_subdirectory("shared/safe_io")
+
+add_library(AlmondFEM INTERFACE)
+target_include_directories(AlmondFEM
+    INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>)
+target_link_libraries(AlmondFEM INTERFACE safe_io)
+target_compile_features(AlmondFEM INTERFACE cxx_std_23)
+
+install(TARGETS AlmondFEM
+    EXPORT AlmondFEMTargets
+    INCLUDES DESTINATION include)
+
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
+    DESTINATION include)
+
 add_subdirectory("cmakeapp1")
 add_subdirectory("app1")
 

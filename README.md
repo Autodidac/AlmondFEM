@@ -10,40 +10,51 @@ The Ultimate Hello World – cross-platform, multi-editor ready C++20 template f
 
 ## AlmondFEM library overview
 
-AlmondFEM lives under `include/almond_fem` and is delivered as a header-only, interface CMake target. It focuses on 2D
-scalar Poisson problems with linear triangular elements and is ideal for gameplay prototyping or runtime tooling where a
-small, dependency-free solver is desirable.
+AlmondFEM lives under `include/almond_fem` and is delivered as a header-only, interface CMake target. It focuses on 2D scalar
+Poisson problems with linear triangular elements and is ideal for gameplay prototyping or runtime tooling where a small,
+dependency-free solver is desirable.
 
 Key features:
 
 - **C++23 header-only design** – integrate by linking against the `AlmondFEM` interface target; no compilation units are required.
 - **Cross-platform** – relies exclusively on the C++ standard library and the bundled `safe_io` logging helpers.
-- **Deterministic dense solver** – assembles a global system and performs robust Gaussian elimination with partial pivoting.
-- **Debug-friendly** – optional verbose mode prints the stiffness matrix, right-hand side, and residual norm via `safe_io::print`.
+- **Dual solver paths** – select between a direct Gaussian-elimination solve (`SolverType::Direct`) and an iterative conjugate
+  gradient path (`SolverType::ConjugateGradient`) from `SolverOptions::solver`.
+- **Configurable convergence** – tune `SolverOptions::tolerance`, `SolverOptions::max_iterations`, and
+  `SolverOptions::pivot_tolerance` for precise control over accuracy, iteration caps, and pivoting safeguards, with
+  `SolverOptions::verbose` exposing per-iteration diagnostics.
+- **Preconditioning support** – pair the iterative solver with `SolverOptions::preconditioner` to switch between Jacobi,
+  incomplete Cholesky (IC0), or an identity/no-preconditioner configuration.
+- **Debug-friendly** – optional verbose mode prints the stiffness matrix, right-hand side, and residual norm via
+  `safe_io::print`.
 
 ### Sparse matrix backends
 
-AlmondFEM assembles element contributions into a COO structure and promotes it to CSR for solves on the CPU. CSR is the canonical
-format and feeds the existing dense fallback solver as well as residual evaluation. Developers exploring SIMD-friendly
-implementations can request a SELL-C-σ view by enabling `SolverOptions::build_sellc_sigma` (defaults to a chunk size of 32 rows),
-which keeps CSR as the source of truth while grouping similar row lengths per slice. An ELLPACK view is also available for
-documentation and test scenarios where fixed per-row storage is useful, but it is not instantiated unless explicitly requested.
+AlmondFEM assembles element contributions into a COO structure and promotes it to CSR before dispatching either solver.
+CSR remains the authoritative storage throughout factorisation, residual evaluations, and preconditioner builds, with optional
+views derived from it when toggled through `SolverOptions`:
+
+- **SELL-C-σ slices** – enable `SolverOptions::build_sellc_sigma` (customise with `SolverOptions::sell_chunk_size`) to materialise
+  SIMD-friendly slices while retaining CSR as the source-of-truth storage.
+- **ELL reference layout** – request an ELLPACK view for fixed-width row storage during experimentation; it is generated on
+  demand from the CSR assembled under the active `SolverOptions` configuration for validation and documentation scenarios.
 
 ```cpp
 almond::fem::SolverOptions options{};
+options.solver = almond::fem::SolverType::ConjugateGradient;
+options.preconditioner = almond::fem::PreconditionerType::Jacobi;
+options.tolerance = 1e-8;
 options.build_sellc_sigma = true;
 options.sell_chunk_size = 32; // Optional: override the default chunk size.
 
 const auto result = almond::fem::solve(mesh, problem, options);
-safe_io::print("SELL-C-σ residual: {:.3e}", result.residual_norm);
+safe_io::print("Converged residual: {:.3e}", result.residual_norm);
 ```
 
-The snippet above mirrors the configuration used in `Application1`, demonstrating how to toggle optional storage layouts while
-still invoking the unified `solve` entry point.
-
-The `Application1` sample executable demonstrates how to assemble a simple mesh, prescribe boundary conditions, and
-query the solved nodal field values.
-- Remain easy to extend to new compilers, targets, and IDE workflows.
+`Application1` demonstrates the complete assembly → solve flow, while the deeper solver internals (matrix assembly, preconditioners,
+and backend toggles) are documented in [docs/api-overview.md](docs/api-overview.md). Use the sample together with that guide to
+experiment with new problem definitions or convergence settings. The surrounding template remains easy to extend to new compilers,
+targets, and IDE workflows.
 
 ## Supported toolchains
 | Compiler | Generator | Notes |

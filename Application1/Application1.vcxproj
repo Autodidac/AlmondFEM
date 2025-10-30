@@ -117,6 +117,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -137,6 +138,7 @@
       <AdditionalIncludeDirectories>..\include;..\shared\safe_io\include;..\StaticLib1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -156,10 +158,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\include\almond_fem\almond_fem.hpp" />
-    <ClInclude Include="..\include\almond_fem\detail\dense_matrix.hpp" />
-    <ClInclude Include="..\include\almond_fem\mesh.hpp" />
-    <ClInclude Include="..\include\almond_fem\problem.hpp" />
-    <ClInclude Include="..\include\almond_fem\solver.hpp" />
     <ClInclude Include="..\shared\safe_io\include\safe_io\utils.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -1,4 +1,4 @@
-#include <almond_fem/almond_fem.hpp>
+﻿#include <almond_fem/almond_fem.hpp>
 #include <safe_io/utils.hpp>
 
 #include <array>
@@ -69,7 +69,7 @@ int main()
     showcase.verbose = true; // Emit per-iteration residuals and backend summaries to the console.
 
     const auto cg_showcase_result = almond::fem::solve(mesh, problem, showcase);
-    report_solution("CG + Jacobi (SELL-C-sigma)", cg_showcase_result);
+    report_solution("CG + Jacobi (SELL-C-σ)", cg_showcase_result);
 
 #ifdef _WIN32
     safe_io::print("Press Enter to exit...");

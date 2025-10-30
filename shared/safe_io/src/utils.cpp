@@ -11,7 +11,7 @@
 
 namespace safe_io
 {
-    namespace
+    namespace detail
     {
         void configure_console() noexcept
         {
@@ -41,11 +41,5 @@ namespace safe_io
             (void)configured;
 #endif
         }
-    } // namespace
-
-    std::ostream& out() noexcept
-    {
-        configure_console();
-        return std::cout;
-    }
+    } // namespace detail
 } // namespace safe_io

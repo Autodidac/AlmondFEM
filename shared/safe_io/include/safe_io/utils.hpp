@@ -6,8 +6,18 @@
 
 namespace safe_io
 {
+    namespace detail
+    {
+        // Platform specific setup to keep console output UTF-8 friendly.
+        void configure_console() noexcept;
+    }
+
     // Returns a reference to std::cout for safe, global access to output.
-    std::ostream& out() noexcept;
+    inline std::ostream& out() noexcept
+    {
+        detail::configure_console();
+        return std::cout;
+    }
 
     // A wrapper function for formatted output using {fmt}.
     // This function allows type-safe, efficient formatting with automatic newline.

@@ -85,7 +85,12 @@ namespace almond::fem
             const auto& c = mesh.node(element.node_ids[2]);
 
             const double area = 0.5 * ((b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y));
-            return std::abs(area);
+            const double magnitude = std::abs(area);
+            if (magnitude <= std::numeric_limits<double>::epsilon())
+            {
+                throw std::runtime_error("Mesh element area is too small (degenerate triangle)");
+            }
+            return magnitude;
         }
 
         inline std::array<double, 9> local_stiffness(const Mesh& mesh, const Element& element)

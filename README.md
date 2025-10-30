@@ -6,6 +6,23 @@ The Ultimate Hello World – cross-platform, multi-editor ready C++20 template f
 - Provide a batteries-included baseline for modern C++20 development that works across Windows and Linux.
 - Showcase clean CMake integration with manifest-based dependency management (vcpkg) and graphics-ready defaults (Vulkan SDK).
 - Offer repeatable scripts so teams can configure, build, install, and run projects from a single source of truth.
+- Ship a modern header-only finite element solver (AlmondFEM) that can be embedded directly into AlmondShell/AlmondEngine tooling.
+
+## AlmondFEM library overview
+
+AlmondFEM lives under `include/almond_fem` and is delivered as a header-only, interface CMake target. It focuses on 2D
+scalar Poisson problems with linear triangular elements and is ideal for gameplay prototyping or runtime tooling where a
+small, dependency-free solver is desirable.
+
+Key features:
+
+- **C++23 header-only design** – integrate by linking against the `AlmondFEM` interface target; no compilation units are required.
+- **Cross-platform** – relies exclusively on the C++ standard library and the bundled `safe_io` logging helpers.
+- **Deterministic dense solver** – assembles a global system and performs robust Gaussian elimination with partial pivoting.
+- **Debug-friendly** – optional verbose mode prints the stiffness matrix, right-hand side, and residual norm via `safe_io::print`.
+
+The `Application1` sample executable demonstrates how to assemble a simple mesh, prescribe boundary conditions, and
+query the solved nodal field values.
 - Remain easy to extend to new compilers, targets, and IDE workflows.
 
 ## Supported toolchains

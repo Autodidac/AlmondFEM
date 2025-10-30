@@ -2,6 +2,55 @@
 
 The template bundles a small collection of reusable utilities and establishes conventions for adding new libraries. This document summarises what ships today, planned abstractions, and extension points for template consumers.
 
+## AlmondFEM
+
+The AlmondFEM headers live in `include/almond_fem/` and provide a complete, header-only toolkit for assembling and solving 2D
+Poisson problems.
+
+### Key headers and types
+- **`mesh.hpp`** – exposes the geometric model through `Node`, `Element`, and the `Mesh` container. `Mesh` owns the nodes and
+  linear triangular elements, validates connectivity on construction, and offers helpers such as `add_node`, `add_element`,
+  and `nodes()`/`elements()` spans for iteration.
+- **`problem.hpp`** – defines the loading and constraint primitives: `DirichletBoundary`, `PointLoad`, and
+  `ProblemDefinition`, plus the `SolveResult` returned by solver routines.
+- **`solver.hpp`** – bundles the solver front-end (`SolverType`, `PreconditionerType`, `SolverOptions`) and implementation
+  utilities. Use `SolverOptions` to select between direct Gaussian elimination and the conjugate-gradient path, configure
+  tolerance/iteration caps, toggle verbose diagnostics, and request optional SELL-C-σ views.
+
+Refer back to the [README’s AlmondFEM overview](../README.md#almondfem-library-overview) for a narrative walkthrough and sample
+usage that complements this API summary.
+
+### Mesh assembly workflow
+1. Create a `Mesh` by either constructing it with node/element vectors or by incrementally calling `add_node`/`add_element`.
+   Each `Element` stores three node indices and an optional material conductivity (`conductivity` defaults to `1.0`). Mesh
+   validation ensures referenced nodes exist, so populate nodes before pushing elements.
+2. Optionally author custom importers by wrapping `Mesh` construction behind your own loader functions—`Mesh` exposes spans for
+   read/write access, making it straightforward to integrate procedural generators or on-disk formats.
+
+### Boundary conditions and loads
+- Populate `ProblemDefinition::dirichlet_conditions` with `DirichletBoundary` entries (node index + prescribed value) to clamp
+  nodal values.
+- Add concentrated forces via `ProblemDefinition::point_loads`; each `PointLoad` couples a node index with a scalar load.
+- Set `ProblemDefinition::uniform_source` when a domain-wide source term is required.
+
+### Solver and preconditioner selection
+- Pick a solver through `SolverOptions::solver` (`SolverType::Direct` or `SolverType::ConjugateGradient`). The iterative path
+  honours `SolverOptions::tolerance`, `SolverOptions::max_iterations`, and `SolverOptions::verbose`.
+- Choose a preconditioner with `SolverOptions::preconditioner` (`None`, `Jacobi`, or `IncompleteCholesky0`). The IC(0)
+  preconditioner requires symmetric positive-definite stiffness matrices; failures emit informative exceptions.
+- Advanced knobs:
+  - `pivot_tolerance` guards partial pivoting during the direct solve.
+  - `build_sellc_sigma`/`sell_chunk_size` request SELL-C-σ slices alongside the core CSR storage for experimentation or SIMD
+    tuning.
+
+### Extension points
+- **Custom preconditioners**: derive from `detail::Preconditioner` in `solver.hpp` and inject your implementation into the
+  solver dispatch for domain-specific experimentation.
+- **Mesh loaders and generators**: leverage `Mesh` spans for efficient conversions from external file formats or procedural
+  pipelines.
+- **Solver integrations**: the high-level structures (`ProblemDefinition`, `SolverOptions`) are intentionally lightweight, so
+  downstream tools can add option fields or adapters without recompiling the core headers.
+
 ## Bundled utilities
 
 ### `safe_io`

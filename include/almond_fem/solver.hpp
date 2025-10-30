@@ -218,12 +218,17 @@ namespace almond::fem
             coo.values[iterator->second] = 1.0;
         }
 
-        auto csr = detail::compress_to_csr(coo);
+        detail::CsrMatrix csr(coo);
+
+        if (options.build_sellc_sigma)
+        {
+            [[maybe_unused]] detail::SellCSigmaMatrix sell(csr, options.sell_chunk_size);
+        }
 
         if (options.verbose)
         {
             safe_io::print("Assembled global stiffness matrix ({}x{})", node_count, node_count);
-            const auto dense_view = detail::csr_to_dense(csr);
+            const auto dense_view = csr.to_dense();
             for (std::size_t row = 0; row < node_count; ++row)
             {
                 std::string row_values;
@@ -237,18 +242,18 @@ namespace almond::fem
             safe_io::print("RHS vector: {}", fmt::join(rhs, ", "));
         }
 
-        auto solution = detail::solve(detail::csr_to_dense(csr), rhs, options.pivot_tolerance);
+        auto solution = detail::solve(csr, rhs, options.pivot_tolerance);
 
         std::vector<double> residual(node_count, 0.0);
         for (std::size_t i = 0; i < node_count; ++i)
         {
             double sum = 0.0;
-            const auto row_begin = static_cast<std::size_t>(csr.row_ptr[i]);
-            const auto row_end = static_cast<std::size_t>(csr.row_ptr[i + 1]);
+            const auto row_begin = static_cast<std::size_t>(csr.row_ptr()[i]);
+            const auto row_end = static_cast<std::size_t>(csr.row_ptr()[i + 1]);
             for (std::size_t entry = row_begin; entry < row_end; ++entry)
             {
-                const auto column = static_cast<std::size_t>(csr.col_idx[entry]);
-                sum += csr.values[entry] * solution[column];
+                const auto column = static_cast<std::size_t>(csr.col_idx()[entry]);
+                sum += csr.values()[entry] * solution[column];
             }
             residual[i] = sum - rhs[i];
         }

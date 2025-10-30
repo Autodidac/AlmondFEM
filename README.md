@@ -21,6 +21,14 @@ Key features:
 - **Deterministic dense solver** – assembles a global system and performs robust Gaussian elimination with partial pivoting.
 - **Debug-friendly** – optional verbose mode prints the stiffness matrix, right-hand side, and residual norm via `safe_io::print`.
 
+### Sparse matrix backends
+
+AlmondFEM assembles element contributions into a COO structure and promotes it to CSR for solves on the CPU. CSR is the canonical
+format and feeds the existing dense fallback solver as well as residual evaluation. Developers exploring SIMD-friendly
+implementations can request a SELL-C-σ view by enabling `SolveOptions::build_sellc_sigma` (defaults to a chunk size of 32 rows),
+which keeps CSR as the source of truth while grouping similar row lengths per slice. An ELLPACK view is also available for
+documentation and test scenarios where fixed per-row storage is useful, but it is not instantiated unless explicitly requested.
+
 The `Application1` sample executable demonstrates how to assemble a simple mesh, prescribe boundary conditions, and
 query the solved nodal field values.
 - Remain easy to extend to new compilers, targets, and IDE workflows.

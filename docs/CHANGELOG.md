@@ -4,10 +4,10 @@ All notable changes to the Cpp20 Ultimate Project Template will be documented in
 
 ## [Unreleased]
 ### Added
-- Placeholder section for upcoming features and documentation. Populate with bullet points summarising new capabilities.
+- Sparse matrix backends for AlmondFEM including CSR, optional SELL-C-σ slices, and an ELLPACK reference implementation.
 
 ### Changed
-- Describe behavioural changes, refactors, or dependency updates that impact consumers.
+- `SolveOptions` exposes toggles for opting into SELL-C-σ construction while keeping CSR the canonical CPU format.
 
 ### Fixed
 - Note bug fixes or build issues resolved in the template scripts or sample modules.

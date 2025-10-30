@@ -1,26 +1,40 @@
-# Project roadmap
+# AlmondFEM roadmap
 
-This roadmap outlines planned enhancements to the Cpp20 Ultimate Project Template. Timelines are grouped by horizon to help contributors focus on the most impactful upgrades.
+The roadmap groups upcoming solver work, tooling refinements, and documentation initiatives
+by horizon. Use it to coordinate contributions and identify high-impact areas.
 
 ## Short-term (next 1–2 releases)
-- **Build tooling polish**: finalize cross-platform shell script parity and document invocation examples for popular IDE integrations.
-- **CI bootstrap**: add a GitHub Actions workflow that exercises the GCC and Clang build scripts on Linux and runs smoke tests on the sample executable.
-- **Sample module curation**: refactor `cmakeapp1` into a minimal demonstration that highlights dependency injection, logging, and configuration patterns.
-- **Documentation uplift**: link new docs (roadmap, API overview, changelog) from the README and include guidance for keeping them current.
+- **Solver validation suite** – add doctest/catch2-based smoke tests that run sample meshes
+  through both direct and CG paths via CMake `ctest`.
+- **Build tooling polish** – expand the shell scripts with verbose logging flags and publish
+  worked examples for integrating with GitHub Actions.
+- **Preset curation** – document each `CMakePresets.json` entry directly in the file and align
+  naming across scripts and IDE configurations.
+- **Documentation uplift** – refresh API snippets and add a quick-start mesh example to the
+  README.
 
 ## Mid-term (next quarter)
-- **Preset expansion**: extend `CMakePresets.json` to cover MSVC multi-config builds, cross-compilation targets, and sanitiser builds.
-- **Cache optimisation**: introduce ccache/sccache integration with automatic detection during configuration.
-- **CI matrix coverage**: configure GitHub Actions to run the test matrix across Windows, Linux, and macOS, with artifact uploads for binaries.
-- **Sample module gallery**: add optional modules demonstrating GUI integration (Qt/ImGui) and networking stacks with togglable build options.
+- **Preconditioner experiments** – prototype ILU/SSOR variants and surface them through
+  `SolverOptions` for comparative studies.
+- **Mesh import/export** – ship OBJ/VTK adapters and document integration with the reference
+  applications.
+- **Performance instrumentation** – provide optional timing hooks and benchmark harnesses that
+  can be toggled during configuration.
+- **CI coverage** – stand up Linux and Windows pipelines that exercise GCC, Clang, and MSVC
+  builds, running the validation suite.
 
 ## Long-term (6–12 months)
-- **Template extensibility**: provide a plugin-style system for scaffolding new applications or libraries, with project generators powered by Python or CMake scripting.
-- **Enterprise-ready CI/CD**: publish reference pipelines for Azure DevOps and GitLab CI that mirror the GitHub Actions workflows, including caching and deployment steps.
-- **Ecosystem integrations**: support additional package managers (Conan, Hunter) and embed examples for cross-language bindings (Python, Rust, WASM).
-- **Sustainability processes**: establish release cadences, backward compatibility policies, and automated changelog generation.
+- **3D element support** – extend `Mesh` and assembly routines to handle tetrahedral meshes
+  while preserving backward compatibility with 2D workflows.
+- **Domain-specific visualisation** – integrate lightweight viewers or exporters (e.g. VTK,
+  ParaView scripts) for post-processing fields.
+- **Ecosystem integration** – explore Python bindings and notebook-friendly APIs for rapid
+  prototyping.
+- **Sustainability processes** – establish release cadences, backward compatibility policies,
+  and automated changelog generation.
 
 ## Contributing to the roadmap
-- Open a discussion or issue describing proposed roadmap changes and reference concrete use cases.
-- When landing new features, update the relevant horizon with completed work or newly identified follow-up items.
-- Periodically review horizons to ensure items remain actionable and reflect community priorities.
+- Discuss proposed updates in issues or discussions before editing the roadmap.
+- When landing new features, update the relevant horizon and cross-link supporting
+  documentation.
+- Periodically revisit horizons to retire completed items and reprioritise upcoming work.

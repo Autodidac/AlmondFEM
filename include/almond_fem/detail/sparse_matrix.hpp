@@ -89,7 +89,7 @@ namespace almond::fem::detail
         std::vector<double> m_values{};
     };
 
-    // SELL-C-σ layout derived from CSR using locally sorted slices. Enables
+    // SELL-C-sigma layout derived from CSR using locally sorted slices. Enables
     // vector-friendly traversal without mutating the canonical CSR storage.
     class SellCSigmaMatrix
     {

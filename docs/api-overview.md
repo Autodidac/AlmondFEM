@@ -15,7 +15,7 @@ Poisson problems.
   `ProblemDefinition`, plus the `SolveResult` returned by solver routines.
 - **`solver.hpp`** – bundles the solver front-end (`SolverType`, `PreconditionerType`, `SolverOptions`) and implementation
   utilities. Use `SolverOptions` to select between direct Gaussian elimination and the conjugate-gradient path, configure
-  tolerance/iteration caps, toggle verbose diagnostics, and request optional SELL-C-σ views.
+  tolerance/iteration caps, toggle verbose diagnostics, and request optional SELL-C-sigma views.
 
 Refer back to the [README’s AlmondFEM overview](../README.md#almondfem-library-overview) for a narrative walkthrough and sample
 usage that complements this API summary.
@@ -40,7 +40,7 @@ usage that complements this API summary.
   preconditioner requires symmetric positive-definite stiffness matrices; failures emit informative exceptions.
 - Advanced knobs:
   - `pivot_tolerance` guards partial pivoting during the direct solve.
-  - `build_sellc_sigma`/`sell_chunk_size` request SELL-C-σ slices alongside the core CSR storage for experimentation or SIMD
+  - `build_sellc_sigma`/`sell_chunk_size` request SELL-C-sigma slices alongside the core CSR storage for experimentation or SIMD
     tuning.
 
 ### Extension points

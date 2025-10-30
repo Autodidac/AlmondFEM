@@ -113,7 +113,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>..\shared\safe_io\include;..\StaticLib1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\include;..\shared\safe_io\include;..\StaticLib1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
@@ -134,7 +134,7 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>..\shared\safe_io\include;..\StaticLib1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\include;..\shared\safe_io\include;..\StaticLib1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -151,7 +151,16 @@
     <Text Include="CMakeLists.txt" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\shared\safe_io\src\utils.cpp" />
     <ClCompile Include="src\Application1.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\include\almond_fem\almond_fem.hpp" />
+    <ClInclude Include="..\include\almond_fem\detail\dense_matrix.hpp" />
+    <ClInclude Include="..\include\almond_fem\mesh.hpp" />
+    <ClInclude Include="..\include\almond_fem\problem.hpp" />
+    <ClInclude Include="..\include\almond_fem\solver.hpp" />
+    <ClInclude Include="..\shared\safe_io\include\safe_io\utils.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

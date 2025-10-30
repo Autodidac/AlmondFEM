@@ -25,9 +25,21 @@ Key features:
 
 AlmondFEM assembles element contributions into a COO structure and promotes it to CSR for solves on the CPU. CSR is the canonical
 format and feeds the existing dense fallback solver as well as residual evaluation. Developers exploring SIMD-friendly
-implementations can request a SELL-C-σ view by enabling `SolveOptions::build_sellc_sigma` (defaults to a chunk size of 32 rows),
+implementations can request a SELL-C-σ view by enabling `SolverOptions::build_sellc_sigma` (defaults to a chunk size of 32 rows),
 which keeps CSR as the source of truth while grouping similar row lengths per slice. An ELLPACK view is also available for
 documentation and test scenarios where fixed per-row storage is useful, but it is not instantiated unless explicitly requested.
+
+```cpp
+almond::fem::SolverOptions options{};
+options.build_sellc_sigma = true;
+options.sell_chunk_size = 32; // Optional: override the default chunk size.
+
+const auto result = almond::fem::solve(mesh, problem, options);
+safe_io::print("SELL-C-σ residual: {:.3e}", result.residual_norm);
+```
+
+The snippet above mirrors the configuration used in `Application1`, demonstrating how to toggle optional storage layouts while
+still invoking the unified `solve` entry point.
 
 The `Application1` sample executable demonstrates how to assemble a simple mesh, prescribe boundary conditions, and
 query the solved nodal field values.

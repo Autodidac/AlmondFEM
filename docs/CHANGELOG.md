@@ -7,7 +7,7 @@ All notable changes to the Cpp20 Ultimate Project Template will be documented in
 - Sparse matrix backends for AlmondFEM including CSR, optional SELL-C-σ slices, and an ELLPACK reference implementation.
 
 ### Changed
-- `SolveOptions` exposes toggles for opting into SELL-C-σ construction while keeping CSR the canonical CPU format.
+- `SolverOptions` exposes toggles for opting into SELL-C-σ construction while keeping CSR the canonical CPU format.
 
 ### Fixed
 - Note bug fixes or build issues resolved in the template scripts or sample modules.

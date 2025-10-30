@@ -59,21 +59,17 @@ int main()
         }
     };
 
-    almond::fem::SolverOptions cg_jacobi{};
-    cg_jacobi.verbose = true;
-    const auto cg_jacobi_result = almond::fem::solve(mesh, problem, cg_jacobi);
-    report_solution("CG + Jacobi", cg_jacobi_result);
+    almond::fem::SolverOptions showcase{};
+    showcase.solver = almond::fem::SolverType::ConjugateGradient; // Explicitly follow the iterative path.
+    showcase.preconditioner = almond::fem::PreconditionerType::Jacobi; // Lightweight diagonal scaling for stability.
+    showcase.tolerance = 1e-10; // Tighten the CG tolerance so the residual visibly contracts.
+    showcase.max_iterations = 256; // Cap the iteration budget for documentation and demos.
+    showcase.build_sellc_sigma = true; // Request SELL-C-σ slices alongside the canonical CSR matrix.
+    showcase.sell_chunk_size = 16; // Override the chunk width to highlight tunable SIMD layouts.
+    showcase.verbose = true; // Emit per-iteration residuals and backend summaries to the console.
 
-    almond::fem::SolverOptions cg_ic0{};
-    cg_ic0.preconditioner = almond::fem::PreconditionerType::IncompleteCholesky0;
-    const auto cg_ic0_result = almond::fem::solve(mesh, problem, cg_ic0);
-    report_solution("CG + IC(0)", cg_ic0_result);
-
-    almond::fem::SolverOptions direct{};
-    direct.solver = almond::fem::SolverType::Direct;
-    direct.preconditioner = almond::fem::PreconditionerType::None;
-    const auto direct_result = almond::fem::solve(mesh, problem, direct);
-    report_solution("Direct", direct_result);
+    const auto cg_showcase_result = almond::fem::solve(mesh, problem, showcase);
+    report_solution("CG + Jacobi (SELL-C-σ)", cg_showcase_result);
 
 #ifdef _WIN32
     safe_io::print("Press Enter to exit...");

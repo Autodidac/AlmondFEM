@@ -126,6 +126,8 @@ specific package recommendations and IDE guidance.
 - [`docs/roadmap.md`](docs/roadmap.md) – upcoming solver features, tooling improvements, and
   research milestones.
 - [`docs/CHANGELOG.md`](docs/CHANGELOG.md) – release tracking with a Keep-a-Changelog format.
+- [`docs/sparse-particle-demo.md`](docs/sparse-particle-demo.md) – step-by-step hybrid sparse
+  particle/bubble walkthrough inspired by the FLIP + UniBubbles papers in `docs/`.
 
 ## Contributing
 - Update the roadmap and changelog whenever solver features or build workflows evolve.

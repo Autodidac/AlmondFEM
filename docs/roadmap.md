@@ -12,6 +12,8 @@ by horizon. Use it to coordinate contributions and identify high-impact areas.
   naming across scripts and IDE configurations.
 - **Documentation uplift** – refresh API snippets and add a quick-start mesh example to the
   README.
+- **Hybrid FLIP/Bubble showcase** – iterate on the sparse particle demo and capture frame
+  dumps suitable for inclusion alongside the PDFs.
 
 ## Mid-term (next quarter)
 - **Preconditioner experiments** – prototype ILU/SSOR variants and surface them through

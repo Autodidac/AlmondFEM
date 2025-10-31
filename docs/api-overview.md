@@ -31,6 +31,14 @@ only.
 - Implements the element assembly, sparse promotion (COO → CSR), optional SELL/ELL views,
   and solver orchestration.
 
+### `sparse_particle_system.hpp`
+- Defines a lightweight sparse voxel structure used to evolve particle based domains.
+- Bundles a `BubbleSolver` for coarse air pocket cohesion and a `BubbleEmitter` helper for
+  paper-inspired FLIP + bubble emission demos.
+- Ships with a deterministic Fibonacci-sphere shell sampler that mirrors the sparse
+  particle distribution patterns described in *Adaptive Phase-Field FLIP* and the
+  *UniBubbles* technical report.
+
 ```cpp
 almond::fem::SolverOptions options{};
 options.solver = almond::fem::SolverType::ConjugateGradient;
@@ -69,7 +77,9 @@ the demos and can be leveraged in downstream projects.
 
 ### Sample applications
 - **`cmakeapp1`** – reference CLI application exercising the solver and printing convergence
-  diagnostics. Ideal for cross-platform CMake/Ninja workflows.
+- **`cmakeapp1`** – reference CLI application now wired to the sparse particle + bubbles demo.
+  The program streams high-level telemetry every few frames to highlight how the hybrid
+  FLIP/Bubble coupling behaves without needing a full renderer.
 - **`Application1`** – Visual Studio counterpart that mirrors the CLI behaviour for `.sln`
   users and MSVC debugging sessions.
 

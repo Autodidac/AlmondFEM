@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+project(SimBubblesDemo)
+set(CMAKE_CXX_STANDARD 20)
+add_executable(SimBubbles src/main.cpp)
+target_include_directories(SimBubbles PRIVATE include)
+find_package(SDL3 REQUIRED)
+target_link_libraries(SimBubbles PRIVATE SDL3::SDL3)

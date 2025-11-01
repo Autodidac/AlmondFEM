@@ -4,6 +4,7 @@
 #include "problem.hpp"
 #include "solver.hpp"
 #include "sparse_particle_system.hpp"
+#include "bubble_simulation.hpp"
 
 /*
  * AlmondFEM – A lightweight, header-only finite element solver designed for

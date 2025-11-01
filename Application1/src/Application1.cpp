@@ -34,18 +34,18 @@ namespace
         glClearColor(0.08f, 0.08f, 0.1f, 1.0f);
     }
 
-    void draw_axes(const Vec3& origin, double scale)
+    void draw_axes(const Vec3& origin, GLfloat scale)
     {
         glBegin(GL_LINES);
         glColor3f(1.0f, 0.0f, 0.0f);
-        glVertex3f(origin.x, origin.y, origin.z);
-        glVertex3f(origin.x + scale, origin.y, origin.z);
+        glVertex3f((GLfloat)origin.x, (GLfloat)origin.y, (GLfloat)origin.z);
+        glVertex3f((GLfloat)origin.x + scale, (GLfloat)origin.y, (GLfloat)origin.z);
         glColor3f(0.0f, 1.0f, 0.0f);
-        glVertex3f(origin.x, origin.y, origin.z);
-        glVertex3f(origin.x, origin.y + scale, origin.z);
+        glVertex3f((GLfloat)origin.x, (GLfloat)origin.y, (GLfloat)origin.z);
+        glVertex3f((GLfloat)origin.x, (GLfloat)origin.y + scale, (GLfloat)origin.z);
         glColor3f(0.0f, 0.6f, 1.0f);
-        glVertex3f(origin.x, origin.y, origin.z);
-        glVertex3f(origin.x, origin.y, origin.z + scale);
+        glVertex3f((GLfloat)origin.x, (GLfloat)origin.y, (GLfloat)origin.z);
+        glVertex3f((GLfloat)origin.x, (GLfloat)origin.y, (GLfloat)origin.z + scale);
         glEnd();
     }
 
@@ -59,23 +59,23 @@ namespace
         glColor4f(0.3f, 0.3f, 0.35f, 0.5f);
         glBegin(GL_LINE_LOOP);
         glVertex3f(0, 0, 0);
-        glVertex3f(w, 0, 0);
-        glVertex3f(w, 0, d);
-        glVertex3f(0, 0, d);
+        glVertex3f((GLfloat)w, 0, 0);
+        glVertex3f((GLfloat)w, 0, (GLfloat)d);
+        glVertex3f(0, 0, (GLfloat)d);
         glEnd();
 
         glBegin(GL_LINE_LOOP);
-        glVertex3f(0, h, 0);
-        glVertex3f(w, h, 0);
-        glVertex3f(w, h, d);
-        glVertex3f(0, h, d);
+        glVertex3f(0, (GLfloat)h, 0);
+        glVertex3f((GLfloat)w, (GLfloat)h, 0);
+        glVertex3f((GLfloat)w, (GLfloat)h, (GLfloat)d);
+        glVertex3f(0, (GLfloat)h, (GLfloat)d);
         glEnd();
 
         glBegin(GL_LINES);
-        glVertex3f(0, 0, 0); glVertex3f(0, h, 0);
-        glVertex3f(w, 0, 0); glVertex3f(w, h, 0);
-        glVertex3f(w, 0, d); glVertex3f(w, h, d);
-        glVertex3f(0, 0, d); glVertex3f(0, h, d);
+        glVertex3f(0, 0, 0); glVertex3f(0, (GLfloat)h, 0);
+        glVertex3f((GLfloat)w, 0, 0); glVertex3f((GLfloat)w, (GLfloat)h, 0);
+        glVertex3f((GLfloat)w, 0, (GLfloat)d); glVertex3f((GLfloat)w, (GLfloat)h, (GLfloat)d);
+        glVertex3f(0, 0, (GLfloat)d); glVertex3f(0, (GLfloat)h, (GLfloat)d);
         glEnd();
     }
 
@@ -92,13 +92,13 @@ namespace
                 const size_t idx = g.index(slice, j, k);
                 double gas = g.gas_fraction()[idx];
                 if (gas <= 0.01) continue;
-                float a = std::clamp((float)gas, 0.f, 1.f);
-                float x0 = slice * g.cell_size();
-                float x1 = (slice + 1) * g.cell_size();
-                float y0 = j * g.cell_size();
-                float y1 = (j + 1) * g.cell_size();
-                float z0 = k * g.cell_size();
-                float z1 = (k + 1) * g.cell_size();
+                GLfloat a = std::clamp((float)gas, 0.f, 1.f);
+                GLfloat x0 = slice * (GLfloat)g.cell_size();
+                GLfloat x1 = (slice + 1) * (GLfloat)g.cell_size();
+                GLfloat y0 = j * (GLfloat)g.cell_size();
+                GLfloat y1 = (j + 1) * (GLfloat)g.cell_size();
+                GLfloat z0 = k * (GLfloat)g.cell_size();
+                GLfloat z1 = (k + 1) * (GLfloat)g.cell_size();
                 glColor4f(0.2f, 0.4f, 1.0f, a * 0.6f);
                 glVertex3f(x0, y0, z0); glVertex3f(x1, y0, z0);
                 glVertex3f(x1, y1, z0); glVertex3f(x0, y1, z0);
@@ -237,7 +237,7 @@ int main()
         {
             float s = std::clamp((float)(b.radius * 0.8), 0.2f, 1.f);
             glColor3f(0.85f * s, 0.9f, 0.2f + 0.3f * s);
-            glVertex3f(b.position.x, b.position.y, b.position.z);
+            glVertex3f((GLfloat)b.position.x, (GLfloat)b.position.y, (GLfloat)b.position.z);
         }
         glEnd();
         SDL_GL_SwapWindow(window);

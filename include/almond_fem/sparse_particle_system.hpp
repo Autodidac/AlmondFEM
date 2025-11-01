@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -80,6 +81,35 @@ namespace almond::fem::particles
             return normalize(cross(v, axis));
         }
 
+        class AccumulatingScopeTimer
+        {
+        public:
+            explicit AccumulatingScopeTimer(double& accumulator)
+                : accumulator_{&accumulator},
+                  start_{Clock::now()}
+            {
+            }
+
+            AccumulatingScopeTimer(const AccumulatingScopeTimer&) = delete;
+            AccumulatingScopeTimer& operator=(const AccumulatingScopeTimer&) = delete;
+
+            ~AccumulatingScopeTimer()
+            {
+                if (accumulator_ != nullptr)
+                {
+                    const auto end = Clock::now();
+                    const std::chrono::duration<double> elapsed = end - start_;
+                    *accumulator_ += elapsed.count();
+                }
+            }
+
+        private:
+            using Clock = std::chrono::steady_clock;
+
+            double* accumulator_{nullptr};
+            Clock::time_point start_{};
+        };
+
     } // namespace detail
 
     class SparseParticleSystem
@@ -100,6 +130,11 @@ namespace almond::fem::particles
             double max_speed{0.0};
             double average_density{0.0};
             std::size_t active_cells{0};
+            double velocity_update_seconds{0.0};
+            double position_integration_seconds{0.0};
+            double spatial_index_rebuild_seconds{0.0};
+            double overlap_resolution_seconds{0.0};
+            double density_pass_seconds{0.0};
         };
 
         SparseParticleSystem(double cell_size,
@@ -147,75 +182,98 @@ namespace almond::fem::particles
 
         StepStats step(const StepConfig& cfg)
         {
-            rebuild_spatial_index();
-
             StepStats stats{};
 
-            for (auto& particle : particles_)
             {
-                const auto drag = (particle.phase == Particle::Phase::Carrier) ? cfg.carrier_drag : cfg.bubble_drag;
-                for (int axis = 0; axis < 3; ++axis)
-                {
-                    particle.velocity[axis] += cfg.gravity[axis] * cfg.dt;
-                }
-
-                if (particle.phase == Particle::Phase::Bubble)
-                {
-                    particle.velocity[1] += cfg.buoyancy * cfg.dt;
-                }
-
-                const auto attenuation = std::max(0.0, 1.0 - drag * cfg.dt);
-                for (auto& component : particle.velocity)
-                {
-                    component *= attenuation;
-                }
-
-                const auto speed = detail::length(particle.velocity);
-                if (speed > cfg.max_speed)
-                {
-                    const auto capped = detail::scale(detail::normalize(particle.velocity), cfg.max_speed);
-                    particle.velocity = capped;
-                }
-
-                stats.max_speed = std::max(stats.max_speed, detail::length(particle.velocity));
+                detail::AccumulatingScopeTimer timer(stats.spatial_index_rebuild_seconds);
+                rebuild_spatial_index();
             }
 
-            for (auto& particle : particles_)
             {
-                for (int axis = 0; axis < 3; ++axis)
+                detail::AccumulatingScopeTimer timer(stats.velocity_update_seconds);
+                for (auto& particle : particles_)
                 {
-                    particle.position[axis] += particle.velocity[axis] * cfg.dt;
-
-                    if (particle.position[axis] < domain_min_[axis])
+                    const auto drag = (particle.phase == Particle::Phase::Carrier) ? cfg.carrier_drag : cfg.bubble_drag;
+                    for (int axis = 0; axis < 3; ++axis)
                     {
-                        particle.position[axis] = domain_min_[axis];
-                        particle.velocity[axis] *= -0.35;
+                        particle.velocity[axis] += cfg.gravity[axis] * cfg.dt;
                     }
-                    else if (particle.position[axis] > domain_max_[axis])
+
+                    if (particle.phase == Particle::Phase::Bubble)
                     {
-                        particle.position[axis] = domain_max_[axis];
-                        particle.velocity[axis] *= -0.35;
+                        particle.velocity[1] += cfg.buoyancy * cfg.dt;
+                    }
+
+                    const auto attenuation = std::max(0.0, 1.0 - drag * cfg.dt);
+                    for (auto& component : particle.velocity)
+                    {
+                        component *= attenuation;
+                    }
+
+                    const auto speed = detail::length(particle.velocity);
+                    if (speed > cfg.max_speed)
+                    {
+                        const auto capped = detail::scale(detail::normalize(particle.velocity), cfg.max_speed);
+                        particle.velocity = capped;
+                    }
+
+                    stats.max_speed = std::max(stats.max_speed, detail::length(particle.velocity));
+                }
+            }
+
+            {
+                detail::AccumulatingScopeTimer timer(stats.position_integration_seconds);
+                for (auto& particle : particles_)
+                {
+                    for (int axis = 0; axis < 3; ++axis)
+                    {
+                        particle.position[axis] += particle.velocity[axis] * cfg.dt;
+
+                        if (particle.position[axis] < domain_min_[axis])
+                        {
+                            particle.position[axis] = domain_min_[axis];
+                            particle.velocity[axis] *= -0.35;
+                        }
+                        else if (particle.position[axis] > domain_max_[axis])
+                        {
+                            particle.position[axis] = domain_max_[axis];
+                            particle.velocity[axis] *= -0.35;
+                        }
                     }
                 }
             }
 
             spatial_dirty_ = true;
 
-            rebuild_spatial_index();
-            resolve_overlaps(cfg.dt);
-            rebuild_spatial_index();
+            {
+                detail::AccumulatingScopeTimer timer(stats.spatial_index_rebuild_seconds);
+                rebuild_spatial_index();
+            }
+
+            {
+                detail::AccumulatingScopeTimer timer(stats.overlap_resolution_seconds);
+                resolve_overlaps(cfg.dt);
+            }
+
+            {
+                detail::AccumulatingScopeTimer timer(stats.spatial_index_rebuild_seconds);
+                rebuild_spatial_index();
+            }
 
             stats.active_cells = grid_.size();
 
             const double cell_volume = cell_size_ * cell_size_ * cell_size_;
-            double accumulated_density = 0.0;
-            for (const auto& entry : grid_)
             {
-                accumulated_density += entry.second.total_mass / cell_volume;
-            }
-            if (!grid_.empty())
-            {
-                stats.average_density = accumulated_density / static_cast<double>(grid_.size());
+                detail::AccumulatingScopeTimer timer(stats.density_pass_seconds);
+                double accumulated_density = 0.0;
+                for (const auto& entry : grid_)
+                {
+                    accumulated_density += entry.second.total_mass / cell_volume;
+                }
+                if (!grid_.empty())
+                {
+                    stats.average_density = accumulated_density / static_cast<double>(grid_.size());
+                }
             }
 
             return stats;

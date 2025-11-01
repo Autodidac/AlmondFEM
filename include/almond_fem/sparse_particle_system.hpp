@@ -189,6 +189,17 @@ namespace almond::fem::particles
                 rebuild_spatial_index();
             }
 
+            std::vector<std::vector<std::size_t>> neighbor_cache;
+            const bool cache_neighbors = particles_.size() > 1;
+            if (cache_neighbors)
+            {
+                neighbor_cache.resize(particles_.size());
+                for (std::size_t index = 0; index < particles_.size(); ++index)
+                {
+                    neighbor_cache[index] = neighbor_indices(index);
+                }
+            }
+
             {
                 detail::AccumulatingScopeTimer timer(stats.velocity_update_seconds);
                 for (auto& particle : particles_)
@@ -243,16 +254,12 @@ namespace almond::fem::particles
                 }
             }
 
-            spatial_dirty_ = true;
-
-            {
-                detail::AccumulatingScopeTimer timer(stats.spatial_index_rebuild_seconds);
-                rebuild_spatial_index();
-            }
+            spatial_dirty_ = !particles_.empty();
 
             {
                 detail::AccumulatingScopeTimer timer(stats.overlap_resolution_seconds);
-                resolve_overlaps(cfg.dt);
+                const auto* neighbors_ptr = cache_neighbors ? &neighbor_cache : nullptr;
+                resolve_overlaps(cfg.dt, neighbors_ptr);
             }
 
             {
@@ -391,13 +398,17 @@ namespace almond::fem::particles
             return neighbors;
         }
 
-        void resolve_overlaps(double dt)
+        void resolve_overlaps(double dt,
+                              const std::vector<std::vector<std::size_t>>* cached_neighbors = nullptr)
         {
             const double inverse_dt = (dt > 1e-6) ? 1.0 / dt : 0.0;
+            const bool use_cached_neighbors = cached_neighbors != nullptr &&
+                                               cached_neighbors->size() == particles_.size();
+            bool any_correction = false;
 
             for (std::size_t index = 0; index < particles_.size(); ++index)
             {
-                auto neighbors = neighbor_indices(index);
+                auto neighbors = use_cached_neighbors ? (*cached_neighbors)[index] : neighbor_indices(index);
                 auto& current = particles_[index];
 
                 for (auto neighbor_index : neighbors)
@@ -426,11 +437,16 @@ namespace almond::fem::particles
                             current.velocity[axis] -= correction[axis] * inverse_dt * 0.5;
                             neighbor.velocity[axis] += correction[axis] * inverse_dt * 0.5;
                         }
+
+                        any_correction = true;
                     }
                 }
             }
 
-            spatial_dirty_ = true;
+            if (any_correction)
+            {
+                spatial_dirty_ = true;
+            }
         }
 
         double cell_size_{0.1};
@@ -459,7 +475,12 @@ namespace almond::fem::particles
             double mean_height{0.0};
         };
 
-        explicit BubbleSolver(CouplingParameters parameters = {})
+        BubbleSolver()
+            : BubbleSolver(CouplingParameters{})
+        {
+        }
+
+        explicit BubbleSolver(CouplingParameters parameters)
             : parameters_{parameters}
         {
         }
@@ -700,7 +721,12 @@ namespace almond::fem::particles
             double stream_spacing{0.08};
         };
 
-        explicit BubbleEmitter(Config config = {})
+        BubbleEmitter()
+            : BubbleEmitter(Config{})
+        {
+        }
+
+        explicit BubbleEmitter(Config config)
             : config_{config},
               radius_distribution_(config.min_radius, config.max_radius),
               jitter_distribution_(-config.lateral_jitter, config.lateral_jitter),

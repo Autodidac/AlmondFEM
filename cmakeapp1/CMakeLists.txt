@@ -45,6 +45,22 @@ if(Threads_FOUND)
     target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads)
 endif()
 
+add_executable(solver_benchmark
+    src/solver_benchmark.cpp
+)
+
+target_compile_options(solver_benchmark
+    PRIVATE
+        $<$<CXX_COMPILER_ID:GNU>:-Wall -Wextra -Wpedantic>
+        $<$<CXX_COMPILER_ID:MSVC>:/W4>
+)
+
+target_link_libraries(solver_benchmark PRIVATE AlmondFEM)
+
+if(Threads_FOUND)
+    target_link_libraries(solver_benchmark PRIVATE Threads::Threads)
+endif()
+
 # Install rules
 install(TARGETS ${PROJECT_NAME}
     RUNTIME DESTINATION bin

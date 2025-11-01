@@ -76,12 +76,11 @@ void renderScene() {
 // Main loop and event handling
 int main(int argc, char** argv) {
     // Initialize SDL3 with video
-    if (SDL_Init(SDL_INIT_VIDEO)) {
-    std::cout << "initing sdl" << "\n";
-    }else{
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         std::cerr << "SDL_Init Error: " << SDL_GetError() << std::endl;
         return 1;
     }
+    std::cout << "SDL initialized" << std::endl;
 
     // Use OpenGL for rendering
     SDL_Window* window = SDL_CreateWindow("Bubble Simulation Demo",
@@ -168,9 +167,8 @@ int main(int argc, char** argv) {
         }
         // Simulation update
         if (!paused) {
-            // We use a fixed dt and possibly multiple substeps per frame if frame time is large
-            // For simplicity, just one or two substeps per frame:
-            sim->step(dt);
+            // Single simulation step per frame keeps the update responsive while
+            // the solver internally performs the heavy work for forces and pressure.
             sim->step(dt);
         }
         // Rendering

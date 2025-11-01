@@ -239,7 +239,10 @@ namespace almond::fem::bubbles
     {
     public:
         BubbleSimulation(std::size_t nx, std::size_t ny, std::size_t nz, double cell_size)
-            : m_grid(nx, ny, nz, cell_size) {
+            : m_grid(nx, ny, nz, cell_size)
+        {
+            build_pressure_matrix_pattern();
+            m_pressure_rhs.assign(m_grid.nx() * m_grid.ny() * m_grid.nz(), 0.0);
         }
 
         void add_bubble(const Vec3& position, double radius)
@@ -281,9 +284,10 @@ namespace almond::fem::bubbles
             auto& vel = m_grid.velocities();
             auto& w = m_grid.weights();
 
+            const double inv_cell = 1.0 / m_grid.cell_size();
+
             for (const auto& b : m_bubbles)
             {
-                const double inv_cell = 1.0 / m_grid.cell_size();
                 const int ix = static_cast<int>((std::clamp)(b.position.x * inv_cell, 0.0, static_cast<double>(m_grid.nx() - 1)));
                 const int iy = static_cast<int>((std::clamp)(b.position.y * inv_cell, 0.0, static_cast<double>(m_grid.ny() - 1)));
                 const int iz = static_cast<int>((std::clamp)(b.position.z * inv_cell, 0.0, static_cast<double>(m_grid.nz() - 1)));
@@ -326,8 +330,8 @@ namespace almond::fem::bubbles
                 const int max_iz = (std::min)(static_cast<int>(m_grid.nz()) - 1, static_cast<int>(std::ceil((b.position.z + r) / h)));
 
                 double total_w = 0.0;
-                std::vector<std::pair<std::size_t, double>> contrib;
-                contrib.reserve(static_cast<std::size_t>((max_ix - min_ix + 1) * (max_iy - min_iy + 1) * (max_iz - min_iz + 1)));
+                m_volume_contrib.clear();
+                m_volume_contrib.reserve(static_cast<std::size_t>((max_ix - min_ix + 1) * (max_iy - min_iy + 1) * (max_iz - min_iz + 1)));
 
                 for (int iz = min_iz; iz <= max_iz; ++iz)
                     for (int iy = min_iy; iy <= max_iy; ++iy)
@@ -342,14 +346,14 @@ namespace almond::fem::bubbles
                             if (w <= 0.0) continue;
 
                             const auto idx = m_grid.index(static_cast<std::size_t>(ix), static_cast<std::size_t>(iy), static_cast<std::size_t>(iz));
-                            contrib.emplace_back(idx, w);
+                            m_volume_contrib.emplace_back(idx, w);
                             total_w += w;
                         }
 
-                if (contrib.empty() || total_w <= std::numeric_limits<double>::epsilon()) continue;
+                if (m_volume_contrib.empty() || total_w <= std::numeric_limits<double>::epsilon()) continue;
 
                 const double scale = (std::min)(1.0, b.volume() / (cell_volume * total_w));
-                for (const auto& [idx, w] : contrib) gas[idx] += scale * w;
+                for (const auto& [idx, w] : m_volume_contrib) gas[idx] += scale * w;
             }
 
             for (std::size_t i = 0; i < gas.size(); ++i)
@@ -451,68 +455,13 @@ namespace almond::fem::bubbles
         {
             const std::size_t nx = m_grid.nx(), ny = m_grid.ny(), nz = m_grid.nz();
             const std::size_t N = nx * ny * nz;
-
-            std::vector<std::vector<std::size_t>> adj(N);
-            std::vector<bool> is_dirichlet(N, false);
-
             const auto& liq = m_grid.liquid_fraction();
             const double threshold = 0.05;
 
-            for (std::size_t k = 0; k < nz; ++k)
-                for (std::size_t j = 0; j < ny; ++j)
-                    for (std::size_t i = 0; i < nx; ++i)
-                    {
-                        const auto idx = m_grid.index(i, j, k);
-                        adj[idx].push_back(idx);
-
-                        if (liq[idx] <= threshold) { is_dirichlet[idx] = true; continue; }
-
-                        const auto push_n = [&](int x, int y, int z) {
-                            if (x < 0 || y < 0 || z < 0 ||
-                                x >= static_cast<int>(nx) ||
-                                y >= static_cast<int>(ny) ||
-                                z >= static_cast<int>(nz)) return;
-                            adj[idx].push_back(m_grid.index(static_cast<std::size_t>(x),
-                                static_cast<std::size_t>(y),
-                                static_cast<std::size_t>(z)));
-                            };
-                        push_n(static_cast<int>(i) + 1, static_cast<int>(j), static_cast<int>(k));
-                        push_n(static_cast<int>(i) - 1, static_cast<int>(j), static_cast<int>(k));
-                        push_n(static_cast<int>(i), static_cast<int>(j) + 1, static_cast<int>(k));
-                        push_n(static_cast<int>(i), static_cast<int>(j) - 1, static_cast<int>(k));
-                        push_n(static_cast<int>(i), static_cast<int>(j), static_cast<int>(k) + 1);
-                        push_n(static_cast<int>(i), static_cast<int>(j), static_cast<int>(k) - 1);
-                    }
-
-            for (auto& row : adj) { std::sort(row.begin(), row.end()); row.erase(std::unique(row.begin(), row.end()), row.end()); }
-
-            std::vector<int> row_prefix(N + 1, 0);
-            for (std::size_t r = 0; r < N; ++r) row_prefix[r + 1] = row_prefix[r] + static_cast<int>(adj[r].size());
-
-            detail::CooMatrix coo{};
-            coo.dimension = N;
-            coo.row_prefix = row_prefix;
-            coo.rows.assign(static_cast<std::size_t>(coo.row_prefix.back()), 0);
-            coo.cols.assign(static_cast<std::size_t>(coo.row_prefix.back()), 0);
-            coo.values.assign(static_cast<std::size_t>(coo.row_prefix.back()), 0.0);
-
-            std::vector<std::unordered_map<std::size_t, std::size_t>> map(N);
-            for (std::size_t r = 0; r < N; ++r)
-            {
-                const auto start = static_cast<std::size_t>(coo.row_prefix[r]);
-                const auto& cols = adj[r];
-                map[r].reserve(cols.size());
-                for (std::size_t off = 0; off < cols.size(); ++off)
-                {
-                    const auto idx = start + off;
-                    const auto c = cols[off];
-                    coo.rows[idx] = static_cast<int>(r);
-                    coo.cols[idx] = static_cast<int>(c);
-                    map[r].emplace(c, idx);
-                }
-            }
-
-            std::vector<double> rhs(N, 0.0);
+            auto& values = m_pressure_matrix.values();
+            std::fill(values.begin(), values.end(), 0.0);
+            auto& rhs = m_pressure_rhs;
+            std::fill(rhs.begin(), rhs.end(), 0.0);
             const auto& div = m_grid.divergence();
             const double inv_h2 = 1.0 / (m_grid.cell_size() * m_grid.cell_size());
 
@@ -522,11 +471,13 @@ namespace almond::fem::bubbles
                     {
                         const auto row = m_grid.index(i, j, k);
 
-                        if (is_dirichlet[row])
+                        auto& entries = m_pressure_entries[row];
+                        for (const auto& entry : entries) values[entry.second] = 0.0;
+
+                        if (liq[row] <= threshold)
                         {
-                            const auto it = map[row].find(row);
-                            if (it == map[row].end()) throw std::logic_error("Missing diagonal for Dirichlet cell");
-                            coo.values[it->second] = 1.0;
+                            const auto diag_idx = m_pressure_diagonal[row];
+                            values[diag_idx] = 1.0;
                             rhs[row] = 0.0;
                             continue;
                         }
@@ -547,8 +498,8 @@ namespace almond::fem::bubbles
                             const double w = 0.5 * (liq[row] + liq[n]);
                             if (w <= threshold) { diag += inv_h2; return; }
 
-                            const auto e = map[row].find(n);
-                            if (e != map[row].end()) coo.values[e->second] -= inv_h2;
+                            const auto entry_idx = find_pressure_entry(row, n);
+                            values[entry_idx] = -inv_h2;
                             diag += inv_h2;
                             };
 
@@ -559,14 +510,10 @@ namespace almond::fem::bubbles
                         handle(static_cast<int>(i), static_cast<int>(j), static_cast<int>(k) + 1);
                         handle(static_cast<int>(i), static_cast<int>(j), static_cast<int>(k) - 1);
 
-                        const auto it = map[row].find(row);
-                        if (it == map[row].end()) throw std::logic_error("Missing diagonal entry");
-
-                        coo.values[it->second] += diag;
+                        const auto diag_idx = m_pressure_diagonal[row];
+                        values[diag_idx] = diag;
                         rhs[row] = (m_fluid_density / dt) * div[row];
                     }
-
-            detail::CsrMatrix csr(coo);
 
             SolverOptions opt{};
             opt.solver = SolverType::ConjugateGradient;
@@ -574,7 +521,7 @@ namespace almond::fem::bubbles
             opt.tolerance = 1e-6;
             opt.max_iterations = static_cast<std::size_t>((std::max<std::size_t>)(1000, N * 4));
 
-            const auto summary = detail::solve_linear_system(csr, rhs, opt);
+            const auto summary = detail::solve_linear_system(m_pressure_matrix, rhs, opt);
             m_grid.pressure() = summary.solution;
         }
 
@@ -693,8 +640,112 @@ namespace almond::fem::bubbles
         }
 
     private:
+        void build_pressure_matrix_pattern()
+        {
+            const std::size_t nx = m_grid.nx(), ny = m_grid.ny(), nz = m_grid.nz();
+            const std::size_t N = nx * ny * nz;
+
+            std::vector<std::vector<std::size_t>> adjacency(N);
+            for (auto& row : adjacency) row.reserve(7);
+
+            for (std::size_t k = 0; k < nz; ++k)
+                for (std::size_t j = 0; j < ny; ++j)
+                    for (std::size_t i = 0; i < nx; ++i)
+                    {
+                        const auto idx = m_grid.index(i, j, k);
+                        auto& row = adjacency[idx];
+                        row.push_back(idx);
+
+                        const auto push_n = [&](int x, int y, int z) {
+                            if (x < 0 || y < 0 || z < 0 ||
+                                x >= static_cast<int>(nx) ||
+                                y >= static_cast<int>(ny) ||
+                                z >= static_cast<int>(nz)) return;
+                            row.push_back(m_grid.index(static_cast<std::size_t>(x),
+                                static_cast<std::size_t>(y),
+                                static_cast<std::size_t>(z)));
+                            };
+                        push_n(static_cast<int>(i) + 1, static_cast<int>(j), static_cast<int>(k));
+                        push_n(static_cast<int>(i) - 1, static_cast<int>(j), static_cast<int>(k));
+                        push_n(static_cast<int>(i), static_cast<int>(j) + 1, static_cast<int>(k));
+                        push_n(static_cast<int>(i), static_cast<int>(j) - 1, static_cast<int>(k));
+                        push_n(static_cast<int>(i), static_cast<int>(j), static_cast<int>(k) + 1);
+                        push_n(static_cast<int>(i), static_cast<int>(j), static_cast<int>(k) - 1);
+
+                        std::sort(row.begin(), row.end());
+                        row.erase(std::unique(row.begin(), row.end()), row.end());
+                    }
+
+            detail::CooMatrix coo{};
+            coo.dimension = N;
+            coo.row_prefix.assign(N + 1, 0);
+            for (std::size_t r = 0; r < N; ++r)
+            {
+                coo.row_prefix[r + 1] = coo.row_prefix[r] + static_cast<int>(adjacency[r].size());
+            }
+
+            const std::size_t nnz = static_cast<std::size_t>(coo.row_prefix.back());
+            coo.rows.assign(nnz, 0);
+            coo.cols.assign(nnz, 0);
+            coo.values.assign(nnz, 0.0);
+
+            for (std::size_t r = 0; r < N; ++r)
+            {
+                const auto start = static_cast<std::size_t>(coo.row_prefix[r]);
+                const auto& cols = adjacency[r];
+                for (std::size_t off = 0; off < cols.size(); ++off)
+                {
+                    const auto idx = start + off;
+                    coo.rows[idx] = static_cast<int>(r);
+                    coo.cols[idx] = static_cast<int>(cols[off]);
+                }
+            }
+
+            m_pressure_matrix = detail::CsrMatrix(coo);
+
+            const auto& row_ptr = m_pressure_matrix.row_ptr();
+            const auto& col_idx = m_pressure_matrix.col_idx();
+            m_pressure_entries.resize(N);
+            m_pressure_diagonal.assign(N, std::numeric_limits<std::size_t>::max());
+
+            for (std::size_t r = 0; r < N; ++r)
+            {
+                const auto start = static_cast<std::size_t>(row_ptr[r]);
+                const auto end = static_cast<std::size_t>(row_ptr[r + 1]);
+                auto& entries = m_pressure_entries[r];
+                entries.clear();
+                entries.reserve(end - start);
+                for (std::size_t idx = start; idx < end; ++idx)
+                {
+                    const auto column = static_cast<std::size_t>(col_idx[idx]);
+                    entries.emplace_back(column, idx);
+                    if (column == r) m_pressure_diagonal[r] = idx;
+                }
+                if (m_pressure_diagonal[r] == std::numeric_limits<std::size_t>::max())
+                {
+                    throw std::logic_error("Pressure matrix missing diagonal entry");
+                }
+            }
+        }
+
+        [[nodiscard]] std::size_t find_pressure_entry(std::size_t row, std::size_t column) const
+        {
+            const auto& entries = m_pressure_entries[row];
+            for (const auto& entry : entries)
+            {
+                if (entry.first == column) return entry.second;
+            }
+            throw std::logic_error("Pressure matrix missing neighbour entry");
+        }
+
         EulerianGrid m_grid;
         std::vector<Bubble> m_bubbles{};
+        std::vector<std::pair<std::size_t, double>> m_volume_contrib{};
+
+        detail::CsrMatrix m_pressure_matrix{};
+        std::vector<std::vector<std::pair<std::size_t, std::size_t>>> m_pressure_entries{};
+        std::vector<std::size_t> m_pressure_diagonal{};
+        std::vector<double> m_pressure_rhs{};
 
         double m_fluid_density{ 1000.0 };
         double m_bubble_density{ 1.2 };

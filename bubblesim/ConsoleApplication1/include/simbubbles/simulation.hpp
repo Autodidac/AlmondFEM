@@ -69,6 +69,13 @@ public:
     std::vector<float> phi_b_prev;
     // Divergence (for pressure solve)
     std::vector<float> divergence;
+    // Cached surface tension forces on faces
+    std::vector<Vec3> surfaceForceU;
+    std::vector<Vec3> surfaceForceV;
+    std::vector<Vec3> surfaceForceW;
+    // Temporary buffers reused across steps to avoid reallocations
+    std::vector<Vec3> normalsBuffer;
+    std::vector<float> curvatureBuffer;
 
     FluidSim(int nx, int ny, int nz, float cell_size)
         : Nx(nx), Ny(ny), Nz(nz), dx(cell_size) {
@@ -87,6 +94,11 @@ public:
         phi_b.resize(Nx * Ny * Nz);
         phi_b_prev.resize(Nx * Ny * Nz);
         divergence.resize(Nx * Ny * Nz);
+        surfaceForceU.resize((Nx + 1) * Ny * Nz);
+        surfaceForceV.resize(Nx * (Ny + 1) * Nz);
+        surfaceForceW.resize(Nx * Ny * (Nz + 1));
+        normalsBuffer.resize(Nx * Ny * Nz);
+        curvatureBuffer.resize(Nx * Ny * Nz);
         // Initialize fields to zero
         std::fill(u.begin(), u.end(), 0.0f);
         std::fill(v.begin(), v.end(), 0.0f);
@@ -94,6 +106,9 @@ public:
         std::fill(pressure.begin(), pressure.end(), 0.0f);
         std::fill(phi_b.begin(), phi_b.end(), 0.0f);
         std::fill(phi_b_prev.begin(), phi_b_prev.end(), 0.0f);
+        std::fill(surfaceForceU.begin(), surfaceForceU.end(), Vec3());
+        std::fill(surfaceForceV.begin(), surfaceForceV.end(), Vec3());
+        std::fill(surfaceForceW.begin(), surfaceForceW.end(), Vec3());
     }
 
     // Utility: index calculations for flattened arrays
@@ -339,19 +354,17 @@ public:
     }
 
     // Compute surface tension force per face using φ_b field (Brackbill's CSF approach)
-    void computeSurfaceTension(std::vector<Vec3>& f_sigma_faces) {
-        f_sigma_faces.clear();
-        f_sigma_faces.resize((Nx + 1) * Ny * Nz + Nx * (Ny + 1) * Nz + Nx * Ny * (Nz + 1)); // allocate for all faces (we won't use all in one vector, but for simplicity)
-        // Compute normals and curvature at cell centers
-        std::vector<Vec3> normals;
-        normals.resize(Nx * Ny * Nz);
-        std::vector<float> curvature;
-        curvature.resize(Nx * Ny * Nz);
+    void computeSurfaceTension() {
+        std::fill(surfaceForceU.begin(), surfaceForceU.end(), Vec3());
+        std::fill(surfaceForceV.begin(), surfaceForceV.end(), Vec3());
+        std::fill(surfaceForceW.begin(), surfaceForceW.end(), Vec3());
+        std::fill(normalsBuffer.begin(), normalsBuffer.end(), Vec3());
+        std::fill(curvatureBuffer.begin(), curvatureBuffer.end(), 0.0f);
+
         // Compute normalized gradient of φ_b at cell centers
         for (int k = 0; k < Nz; ++k) {
             for (int j = 0; j < Ny; ++j) {
                 for (int i = 0; i < Nx; ++i) {
-                    // central differences (Neumann boundary: use one-sided at edges)
                     float phi_c = phi_b[idxCell(i, j, k)];
                     float phi_x0 = (i > 0 ? phi_b[idxCell(i - 1, j, k)] : phi_c);
                     float phi_x1 = (i < Nx - 1 ? phi_b[idxCell(i + 1, j, k)] : phi_c);
@@ -363,93 +376,80 @@ public:
                     grad.x = (phi_x1 - phi_x0) / dx;
                     grad.y = (phi_y1 - phi_y0) / dx;
                     grad.z = (phi_z1 - phi_z0) / dx;
-                    normals[idxCell(i, j, k)] = grad;
+                    normalsBuffer[idxCell(i, j, k)] = grad;
                 }
             }
         }
-        // Smooth normals (optional small smoothing to reduce noise)
-        for (int idx = 0; idx < (int)normals.size(); ++idx) {
-            normals[idx] = normals[idx].normalized();
+
+        // Normalize normals to reduce noise
+        for (auto& n : normalsBuffer) {
+            n = n.normalized();
         }
+
         // Compute curvature = divergence of normals
         for (int k = 0; k < Nz; ++k) {
             for (int j = 0; j < Ny; ++j) {
                 for (int i = 0; i < Nx; ++i) {
-                    Vec3 n_c = normals[idxCell(i, j, k)];
-                    // divergence: take neighbor normals difference
-                    float nx0 = (i > 0 ? normals[idxCell(i - 1, j, k)].x : n_c.x);
-                    float nx1 = (i < Nx - 1 ? normals[idxCell(i + 1, j, k)].x : n_c.x);
-                    float ny0 = (j > 0 ? normals[idxCell(i, j - 1, k)].y : n_c.y);
-                    float ny1 = (j < Ny - 1 ? normals[idxCell(i, j + 1, k)].y : n_c.y);
-                    float nz0 = (k > 0 ? normals[idxCell(i, j, k - 1)].z : n_c.z);
-                    float nz1 = (k < Nz - 1 ? normals[idxCell(i, j, k + 1)].z : n_c.z);
+                    Vec3 n_c = normalsBuffer[idxCell(i, j, k)];
+                    float nx0 = (i > 0 ? normalsBuffer[idxCell(i - 1, j, k)].x : n_c.x);
+                    float nx1 = (i < Nx - 1 ? normalsBuffer[idxCell(i + 1, j, k)].x : n_c.x);
+                    float ny0 = (j > 0 ? normalsBuffer[idxCell(i, j - 1, k)].y : n_c.y);
+                    float ny1 = (j < Ny - 1 ? normalsBuffer[idxCell(i, j + 1, k)].y : n_c.y);
+                    float nz0 = (k > 0 ? normalsBuffer[idxCell(i, j, k - 1)].z : n_c.z);
+                    float nz1 = (k < Nz - 1 ? normalsBuffer[idxCell(i, j, k + 1)].z : n_c.z);
                     float div_n = (nx1 - nx0) / (2 * dx) + (ny1 - ny0) / (2 * dx) + (nz1 - nz0) / (2 * dx);
-                    curvature[idxCell(i, j, k)] = div_n;
+                    curvatureBuffer[idxCell(i, j, k)] = div_n;
                 }
             }
         }
-        // Compute face-centered surface tension forces
-        // X-faces
+
+        // Compute face-centered surface tension forces without aliasing between components
         for (int k = 0; k < Nz; ++k) {
             for (int j = 0; j < Ny; ++j) {
                 for (int i = 0; i <= Nx; ++i) {
-                    // faces in x-direction exist between cell (i-1) and (i)
                     if (i == 0 || i == Nx) {
-                        // at domain boundary, no surface tension force (assuming no air outside or treat as symmetry)
-                        f_sigma_faces[idxU(i, j, k)] = Vec3(0, 0, 0);
-                    }
-                    else {
+                        surfaceForceU[idxU(i, j, k)] = Vec3();
+                    } else {
                         int cellL = idxCell(i - 1, j, k);
                         int cellR = idxCell(i, j, k);
-                        // difference in φ_b across face
                         float dphi = phi_b[cellR] - phi_b[cellL];
-                        // average curvature at face
-                        float kappa_avg = 0.5f * (curvature[cellL] + curvature[cellR]);
+                        float kappa_avg = 0.5f * (curvatureBuffer[cellL] + curvatureBuffer[cellR]);
                         float f_scalar = sigma * kappa_avg * dphi / dx;
-                        // Force direction: along +x (from left to right) when φ_b difference is positive
-                        Vec3 f_face(f_scalar, 0.0f, 0.0f);
-                        // assign force per volume for this face (acting on fluid)
-                        f_sigma_faces[idxU(i, j, k)] = f_face;
+                        surfaceForceU[idxU(i, j, k)] = Vec3(f_scalar, 0.0f, 0.0f);
                     }
                 }
             }
         }
-        // Y-faces
+
         for (int k = 0; k < Nz; ++k) {
             for (int j = 0; j <= Ny; ++j) {
                 for (int i = 0; i < Nx; ++i) {
                     if (j == 0 || j == Ny) {
-                        f_sigma_faces[idxV(i, j, k)] = Vec3(0, 0, 0);
-                    }
-                    else {
+                        surfaceForceV[idxV(i, j, k)] = Vec3();
+                    } else {
                         int cellB = idxCell(i, j - 1, k);
                         int cellT = idxCell(i, j, k);
                         float dphi = phi_b[cellT] - phi_b[cellB];
-                        float kappa_avg = 0.5f * (curvature[cellB] + curvature[cellT]);
+                        float kappa_avg = 0.5f * (curvatureBuffer[cellB] + curvatureBuffer[cellT]);
                         float f_scalar = sigma * kappa_avg * dphi / dx;
-                        // direction +y
-                        Vec3 f_face(0.0f, f_scalar, 0.0f);
-                        f_sigma_faces[idxV(i, j, k)] = f_face;
+                        surfaceForceV[idxV(i, j, k)] = Vec3(0.0f, f_scalar, 0.0f);
                     }
                 }
             }
         }
-        // Z-faces
+
         for (int k = 0; k <= Nz; ++k) {
             for (int j = 0; j < Ny; ++j) {
                 for (int i = 0; i < Nx; ++i) {
                     if (k == 0 || k == Nz) {
-                        f_sigma_faces[idxW(i, j, k)] = Vec3(0, 0, 0);
-                    }
-                    else {
+                        surfaceForceW[idxW(i, j, k)] = Vec3();
+                    } else {
                         int cellF = idxCell(i, j, k - 1);
                         int cellB = idxCell(i, j, k);
                         float dphi = phi_b[cellB] - phi_b[cellF];
-                        float kappa_avg = 0.5f * (curvature[cellF] + curvature[cellB]);
+                        float kappa_avg = 0.5f * (curvatureBuffer[cellF] + curvatureBuffer[cellB]);
                         float f_scalar = sigma * kappa_avg * dphi / dx;
-                        // direction +z
-                        Vec3 f_face(0.0f, 0.0f, f_scalar);
-                        f_sigma_faces[idxW(i, j, k)] = f_face;
+                        surfaceForceW[idxW(i, j, k)] = Vec3(0.0f, 0.0f, f_scalar);
                     }
                 }
             }
@@ -504,16 +504,15 @@ public:
         }
 
         // Surface tension:
-        // Compute face forces due to surface tension
-        std::vector<Vec3> f_sigma;
-        computeSurfaceTension(f_sigma);
+        // Compute face forces due to surface tension (cached vectors avoid reallocations)
+        computeSurfaceTension();
         // Apply a fraction of surface tension force to avoid instability (explicit integration)
         float STF = 0.2f; // surface tension force scaling (less than 1 for stability)
         // Add to water velocity field
         for (int k = 0; k < Nz; ++k) {
             for (int j = 0; j < Ny; ++j) {
                 for (int i = 1; i < Nx; ++i) { // x faces (skip boundaries)
-                    Vec3 f = f_sigma[idxU(i, j, k)] * STF;
+                    Vec3 f = surfaceForceU[idxU(i, j, k)] * STF;
                     // water impulse: Δu = (f/ρ_w)*dt (only water fraction gets this force)
                     u[idxU(i, j, k)] += (f.x / rho_w) * dt;
                 }
@@ -522,7 +521,7 @@ public:
         for (int k = 0; k < Nz; ++k) {
             for (int j = 1; j < Ny; ++j) { // y faces
                 for (int i = 0; i < Nx; ++i) {
-                    Vec3 f = f_sigma[idxV(i, j, k)] * STF;
+                    Vec3 f = surfaceForceV[idxV(i, j, k)] * STF;
                     v[idxV(i, j, k)] += (f.y / rho_w) * dt;
                 }
             }
@@ -530,7 +529,7 @@ public:
         for (int k = 1; k < Nz; ++k) { // z faces
             for (int j = 0; j < Ny; ++j) {
                 for (int i = 0; i < Nx; ++i) {
-                    Vec3 f = f_sigma[idxW(i, j, k)] * STF;
+                    Vec3 f = surfaceForceW[idxW(i, j, k)] * STF;
                     w[idxW(i, j, k)] += (f.z / rho_w) * dt;
                 }
             }
@@ -602,8 +601,9 @@ public:
         // Solve ∇·( (1/ρ) ∇ p ) = divergence/dt  (approximately)
         // We use Gauss-Seidel iterations for simplicity
         std::fill(pressure.begin(), pressure.end(), 0.0f);
-        const int maxIters = 80;
+        const int maxIters = 40;
         for (int iter = 0; iter < maxIters; ++iter) {
+            float maxChange = 0.0f;
             // Sweep through cells
             for (int k = 0; k < Nz; ++k) {
                 for (int j = 0; j < Ny; ++j) {
@@ -655,10 +655,14 @@ public:
                         float b = divergence[idxCell(i, j, k)] / dt;
                         // Gauss-Seidel update: p_new = (neighborTerm - b) / coefSum
                         float newP = (neighborTerm - b) / coefSum;
-                        // Under-relaxation to improve stability (optional)
+                        float oldP = pressure[idxCell(i, j, k)];
                         pressure[idxCell(i, j, k)] = newP;
+                        maxChange = std::max(maxChange, std::fabs(newP - oldP));
                     }
                 }
+            }
+            if (maxChange < 1e-4f) {
+                break;
             }
         }
         // Correct velocities using pressure
@@ -723,16 +727,61 @@ public:
     void step(float dt) {
         // 1. Advect bubbles
         advectBubbles(dt);
-        // 2. Update volume fractions
+        // 2. Merge overlapping bubbles before updating the grid representation
+        mergeOverlappingBubbles();
+        // 3. Update volume fractions
         updatePhiB();
-        // 3. Apply forces (gravity, buoyancy, drag, surface tension)
+        // 4. Apply forces (gravity, buoyancy, drag, surface tension)
         applyForces(dt);
-        // 4. Pressure projection for incompressibility
+        // 5. Pressure projection for incompressibility
         projectPressure(dt);
         // (Water velocity field is now divergence-free relative to mixture; bubble velocities updated from forces already)
     }
 
 private:
+    void mergeOverlappingBubbles(float overlapFraction = 0.95f) {
+        if (particles.size() < 2) {
+            return;
+        }
+        std::vector<bool> toRemove(particles.size(), false);
+        for (size_t i = 0; i < particles.size(); ++i) {
+            if (toRemove[i]) continue;
+            for (size_t j = i + 1; j < particles.size(); ++j) {
+                if (toRemove[j]) continue;
+                const Particle& a = particles[i];
+                const Particle& b = particles[j];
+                Vec3 diff = b.pos - a.pos;
+                float dist = diff.norm();
+                float mergeDist = (a.radius + b.radius) * overlapFraction;
+                if (dist <= mergeDist) {
+                    float combinedVolume = a.volume + b.volume;
+                    if (combinedVolume <= 0.0f) {
+                        toRemove[j] = true;
+                        continue;
+                    }
+                    Vec3 newPos = (a.pos * a.volume + b.pos * b.volume) / combinedVolume;
+                    Vec3 newVel = (a.vel * a.mass + b.vel * b.mass) / (a.mass + b.mass);
+                    float newRadius = std::cbrt((3.0f * combinedVolume) / (4.0f * 3.1415926f));
+                    Particle merged(newPos, newRadius, rho_b);
+                    merged.vel = newVel;
+                    merged.volume = combinedVolume;
+                    merged.mass = rho_b * combinedVolume;
+                    particles[i] = merged;
+                    toRemove[j] = true;
+                }
+            }
+        }
+        if (std::any_of(toRemove.begin(), toRemove.end(), [](bool v) { return v; })) {
+            std::vector<Particle> compacted;
+            compacted.reserve(particles.size());
+            for (size_t idx = 0; idx < particles.size(); ++idx) {
+                if (!toRemove[idx]) {
+                    compacted.push_back(particles[idx]);
+                }
+            }
+            particles.swap(compacted);
+        }
+    }
     // Linear interpolation helper
     inline float lerp(float a, float b, float t) const { return a + t * (b - a); }
     // Effective density on face between cell (i-1) and i in X direction

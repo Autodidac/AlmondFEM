@@ -108,6 +108,13 @@ namespace
                     stats.active_cells,
                     stats.average_density,
                     stats.max_speed);
+                safe_io::print(
+                    "          timings vel={:.3f}ms pos={:.3f}ms spatial={:.3f}ms overlap={:.3f}ms density={:.3f}ms",
+                    stats.velocity_update_seconds * 1000.0,
+                    stats.position_integration_seconds * 1000.0,
+                    stats.spatial_index_rebuild_seconds * 1000.0,
+                    stats.overlap_resolution_seconds * 1000.0,
+                    stats.density_pass_seconds * 1000.0);
 
                 if (telemetry.active_bubbles > 0)
                 {

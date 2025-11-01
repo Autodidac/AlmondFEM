@@ -268,6 +268,61 @@ namespace almond::fem::detail
         }
     }
 
+    inline void multiply(const SellCSigmaMatrix& sell, const std::vector<double>& x, std::vector<double>& result)
+    {
+        const auto n = sell.dimension();
+        if (result.size() != n)
+        {
+            result.assign(n, 0.0);
+        }
+        else
+        {
+            std::fill(result.begin(), result.end(), 0.0);
+        }
+
+        const auto& slice_ptr = sell.slice_ptr();
+        const auto& col_idx = sell.col_idx();
+        const auto& values = sell.values();
+        const auto& row_map = sell.row_map();
+
+        const auto chunk_size = sell.chunk_size();
+        const std::size_t slice_count = slice_ptr.size() > 0 ? slice_ptr.size() - 1 : 0;
+
+        std::size_t row_offset = 0;
+        for (std::size_t slice = 0; slice < slice_count; ++slice)
+        {
+            const std::size_t base = static_cast<std::size_t>(slice_ptr[slice]);
+            const std::size_t next = static_cast<std::size_t>(slice_ptr[slice + 1]);
+            const std::size_t block_entries = next - base;
+
+            const std::size_t row_count = std::min(chunk_size, n - slice * chunk_size);
+            if (row_count == 0 || block_entries == 0)
+            {
+                row_offset += row_count;
+                continue;
+            }
+
+            const std::size_t entries_per_row = block_entries / row_count;
+            for (std::size_t entry = 0; entry < entries_per_row; ++entry)
+            {
+                for (std::size_t lane = 0; lane < row_count; ++lane)
+                {
+                    const std::size_t idx = base + entry * row_count + lane;
+                    const int column = col_idx[idx];
+                    if (column < 0)
+                    {
+                        continue;
+                    }
+
+                    const auto row_index = static_cast<std::size_t>(row_map[row_offset + lane]);
+                    result[row_index] += values[idx] * x[static_cast<std::size_t>(column)];
+                }
+            }
+
+            row_offset += row_count;
+        }
+    }
+
     inline std::vector<double> diagonal(const CsrMatrix& csr)
     {
         const auto n = csr.dimension();

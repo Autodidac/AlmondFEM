@@ -439,7 +439,12 @@ namespace almond::fem
             return summary;
         }
 
-        inline LinearSolveSummary conjugate_gradient(const CsrMatrix& csr, const std::vector<double>& rhs, const SolverOptions& options, const Preconditioner& preconditioner)
+        inline LinearSolveSummary conjugate_gradient(
+            const CsrMatrix& csr,
+            const std::vector<double>& rhs,
+            const SolverOptions& options,
+            const Preconditioner& preconditioner,
+            const SellCSigmaMatrix* sell)
         {
             const auto n = csr.dimension();
             LinearSolveSummary summary{};
@@ -470,7 +475,14 @@ namespace almond::fem
 
             for (std::size_t iteration = 0; iteration < max_iterations; ++iteration)
             {
-                multiply(csr, p, Ap);
+                if (sell != nullptr)
+                {
+                    multiply(*sell, p, Ap);
+                }
+                else
+                {
+                    multiply(csr, p, Ap);
+                }
                 double denom = std::inner_product(p.begin(), p.end(), Ap.begin(), 0.0);
                 if (std::abs(denom) <= std::numeric_limits<double>::epsilon())
                 {
@@ -509,7 +521,11 @@ namespace almond::fem
             return summary;
         }
 
-        inline LinearSolveSummary solve_linear_system(const CsrMatrix& csr, const std::vector<double>& rhs, const SolverOptions& options)
+        inline LinearSolveSummary solve_linear_system(
+            const CsrMatrix& csr,
+            const std::vector<double>& rhs,
+            const SolverOptions& options,
+            const SellCSigmaMatrix* sell = nullptr)
         {
             LinearSolveSummary summary{};
 
@@ -521,7 +537,7 @@ namespace almond::fem
             case SolverType::ConjugateGradient:
             {
                 auto preconditioner = make_preconditioner(csr, options.preconditioner);
-                summary = conjugate_gradient(csr, rhs, options, *preconditioner);
+                summary = conjugate_gradient(csr, rhs, options, *preconditioner, sell);
                 break;
             }
             default:
@@ -529,7 +545,14 @@ namespace almond::fem
             }
 
             std::vector<double> residual(rhs.size(), 0.0);
-            multiply(csr, summary.solution, residual);
+            if (sell != nullptr)
+            {
+                multiply(*sell, summary.solution, residual);
+            }
+            else
+            {
+                multiply(csr, summary.solution, residual);
+            }
             for (std::size_t i = 0; i < residual.size(); ++i)
             {
                 residual[i] -= rhs[i];
@@ -695,17 +718,17 @@ namespace almond::fem
             coo.values[iterator->second] = 1.0;
         }
 
-        detail::CsrMatrix csr(coo);
-
+        auto csr_storage = std::make_shared<detail::CsrMatrix>(coo);
+        std::shared_ptr<detail::SellCSigmaMatrix> sell_storage{};
         if (options.build_sellc_sigma)
         {
-            [[maybe_unused]] detail::SellCSigmaMatrix sell(csr, options.sell_chunk_size);
+            sell_storage = std::make_shared<detail::SellCSigmaMatrix>(*csr_storage, options.sell_chunk_size);
         }
 
         if (options.verbose)
         {
             safe_io::print("Assembled global stiffness matrix ({}x{})", node_count, node_count);
-            const auto dense_view = csr.to_dense();
+            const auto dense_view = csr_storage->to_dense();
             for (std::size_t row = 0; row < node_count; ++row)
             {
                 std::string row_values;
@@ -720,14 +743,26 @@ namespace almond::fem
             safe_io::print("Invoking {} solver with {} preconditioner", to_string(options.solver), to_string(options.preconditioner));
         }
 
-        auto summary = detail::solve_linear_system(csr, rhs, options);
+        auto summary = detail::solve_linear_system(
+            *csr_storage,
+            rhs,
+            options,
+            sell_storage ? sell_storage.get() : nullptr);
 
         if (options.verbose)
         {
             safe_io::print("Solver completed in {} iteration(s). Residual L2 norm: {:.6e}", summary.iterations, summary.achieved_residual);
         }
 
-        return SolveResult{std::move(summary.solution), summary.achieved_residual};
+        SolveResult result{};
+        result.nodal_values = std::move(summary.solution);
+        result.residual_norm = summary.achieved_residual;
+        result.csr_matrix = std::shared_ptr<const detail::CsrMatrix>(csr_storage);
+        if (sell_storage)
+        {
+            result.sellc_sigma_matrix = std::shared_ptr<const detail::SellCSigmaMatrix>(sell_storage);
+        }
+        return result;
     }
 } // namespace almond::fem
 
